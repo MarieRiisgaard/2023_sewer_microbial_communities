@@ -1,0 +1,15 @@
+/data/DMI/
+/data/metadata
+/data/other
+
+output/files
+output/R_environment
+output/tables
+output/plots/old
+output/plots/3_presentations
+output/plots/plots_to_Rodrigo
+
+/scripts/not_used
+
+
+.Rhistory
