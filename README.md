@@ -1,6 +1,6 @@
 # The Sewer Microbiome: A Missing Link to Understanding Community Composition and Dynamics in Wastewater Treatment Plants
 
-R scripts and shell scripts used in "The Sewer Microbiome: A Missing Link to Understanding Community Composition and Dynamics in Wastewater Treatment Plants"
+R scripts and shell scripts used in **The Sewer Microbiome: A Missing Link to Understanding Community Composition and Dynamics in Wastewater Treatment Plants**
 
 ## Code Structure
 
@@ -15,6 +15,8 @@ The study used the MiDAS database for taxonomic classification, which is availab
 ### Scripts
 
 The main script is the R Markdown file found at *scripts/markdowns/sewer_microbiome_article.Rmd*. This script imports functions from the *scripts/functions* directory to process the data and generate plots.
+
+The Bash script *scripts\bash\reclassify_with_updated_database* was used for (1) Reclassifing with MIDAS 5 taxonomy, (2) Classifing gut database with MIDAS tax, and (3) Finding the multiple species matches 
 
 ### Plots
 
