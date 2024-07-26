@@ -9,7 +9,8 @@ output/plots/old
 output/plots/3_presentations
 output/plots/plots_to_Rodrigo
 
-/scripts/not_used
-
+scripts/markdowns/microbial_data_to_Rodrigo.html
+scripts/markdowns/microbial_data_to_Rodrigo.Rmd
+scripts/not_used
 
 .Rhistory
