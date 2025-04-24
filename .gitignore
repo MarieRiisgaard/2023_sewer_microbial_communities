@@ -14,6 +14,8 @@ output/plots/plots_to_Rodrigo/
 output/plots/plots_to_Miriam/
 output/plots/growth_plots
 output/plots/1_results/F5_manual_edit.svg
+output/plots/1_results/*.pdf
+output/plots/2_supplementary_figures/*.pdf
 
 
 scripts/markdowns/microbial_data_to_Rodrigo_v2.html
