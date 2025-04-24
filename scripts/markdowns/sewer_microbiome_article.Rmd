@@ -53,6 +53,10 @@ pacman::p_load(ampvis2,
                lubridate
                )
 
+# Snapshot the environment
+renv::snapshot()
+
+
 ```
 
 ```{r, load data, include=FALSE}
@@ -71,7 +75,27 @@ sewer_data_list <-
     DataPath = DataPath,
     OutputPath = OutputPath)
 
+# see <- sewer_data_list[[2]] %>% 
+#   group_by(SampleContent) %>% 
+#   filter(SampleContent == "biofilm_dry")
+#   summarise(n = n())
 
+  
+  # sewer_data_list[[1]] %>% 
+  #   amp_subset_samples(SampleContent == "biofilm_dry") %>% 
+  #   amp_heatmap(tax_aggregate = "Genus", tax_show = 60, round = 3, group_by = "SampleDate", normalise = T)
+  # 
+  # 
+  # sewer_data_list[[1]] %>% 
+  #   amp_subset_samples(SampleContent == "biofilm_dry") %>% 
+  #   amp_subset_taxa(tax_vector = Nitrifiers, normalise = T) %>% 
+  #   amp_heatmap(tax_aggregate = "Genus", tax_show = 60, round = 2, group_by = "SampleDate", normalise = F) + 
+  #   sewer_data_list[[1]] %>% 
+  #   amp_subset_samples(SampleContent == "biofilm_dry") %>% 
+  #   amp_subset_taxa(tax_vector = Nitrifiers, normalise = T) %>% 
+  #   amp_heatmap(tax_aggregate = "Species", tax_show = 60, round = 2, group_by = "SampleDate", normalise = F, tax_add = "Genus")
+
+  
 data_long <- sewer_data_list[[2]] %>% 
   mutate(SampleContent2 = 
            factor(SampleContent2, 
@@ -94,6 +118,7 @@ data$metadata$SampleContent2 <-
       levels = c("biofilm", "sediment",  "biofilm_end_pressure","sewage", "IWW","AS"), 
       labels = c("Biofilm (g.)",  "Sediment","Biofilm (e.p.)", "SWW", "IWW", "AS"))
 
+
 growth_df <- sewer_data_list[[3]]
 gut_OTU <- sewer_data_list[[4]]
 MIDAS_metabolic_df <- sewer_data_list[[5]]
@@ -111,16 +136,26 @@ DMI_rain_df <- sewer_data_list[[9]] %>%
 
 
 SampleContent2_colors <- c("#1e8449","#b03a2e","#21618C", "#ffb74d", "#e65100", "#795548")
+SampleContent3_colors<- c("#1e8449","#b03a2e","#21618C", "#ffcd80","#e69a3a", "#e65100", "#795548")
+
 
 # Rarefied data
 alpha_diversity_rarefied <- data %>% 
-  amp_alpha_diversity(rarefy = 7322) 
+  amp_alpha_diversity(rarefy = 7322) %>% 
+  left_join(data_long %>% select(SampleID, SampleContent3) %>%rename("SampleID2" = "SampleID")) %>% 
+  mutate(SampleContent3 = 
+           factor(SampleContent3, 
+            levels = c("Biofilm (g.)", "Sediment", "Biofilm (e.p.)", "SWW\n(g.)","SWW\n(e.p.)" ,"IWW","AS"),
+            labels = c("Biofilm (g.)", "Sediment", "Biofilm (e.p.)", "SWW (g.)","SWW\n(e.p.)" ,"IWW","AS")
+
+         ))
 
 # Rarefied long data 
 data_rarefied <- data %>% 
   amp_subset_samples(rarefy = 7322)
 source(paste0({{WD}}, "../2022_initial_microbial_analysis/general_scripts/tidy_long_function.R"))
-  data_long_rarefied <-
+  
+data_long_rarefied <-
     tidy_midas_global(data_rarefied, SampleID_column_name = "SampleID2")
  
    
@@ -129,7 +164,8 @@ source(paste0({{WD}}, "../2022_initial_microbial_analysis/general_scripts/tidy_l
 source(paste0(WD, "scripts/functions/finding_the_core.R"))
 source(paste0(WD, "../2023_RETHINK_sample_collection/scripts/functions/PCOA_from_long_data.R"))
 source(paste0(WD, "../2023_MiDAS_OK_testing/script/ADONIS_from_long_data.R"))
-source(paste0(WD, "scripts/functions/growing_dying_bar_plot.R"))
+#source(paste0(WD, "scripts/functions/growing_dying_bar_plot.R"))
+source(paste0(WD, "scripts/functions/growing_dying_bar_plot_new_version.R"))
 
 
 # Functional groups
@@ -169,6 +205,205 @@ df_functional <-
                                ))
 
 
+# data %>% 
+#   amp_subset_samples(SampleContent2 == "AS") %>% 
+#   amp_heatmap(tax_aggregate = "Genus", tax_show = 50)
+
+```
+
+
+## Find unified core 
+
+```{r}
+## Find "best" core group
+
+abun_limit = 0.01
+
+# biofilm_g <- 
+#     data_long %>% 
+#     filter(SampleContent2 %in% c("Biofilm (g.)")) %>% 
+#     mutate(n_samples = n()) %>% 
+#     ungroup() %>% 
+#     mutate(samples = 
+#              map(.x = samples, ~
+#                    ungroup(.) %>% 
+#                    distinct(Species, rel_abun_species) %>% 
+#                    filter(rel_abun_species >= abun_limit) 
+#              )) %>% 
+#     unnest(samples) %>%
+#     distinct() %>% 
+#     group_by(Species) %>%
+#     reframe(n_obs_tax = n(),
+#             is_core = ifelse(n_obs_tax >= 0.8*n_samples, T, F), 
+#             core_type = case_when(n_obs_tax >= 0.8*n_samples ~ "strict core",
+#                                   n_obs_tax >= 0.5*n_samples ~ "general core",
+#                                   n_obs_tax >= 0.2*n_samples & 0.2*n_samples > 1 ~ "loose core", 
+#                                   n_obs_tax < 0.2*n_samples & n_obs_tax > 1  ~ "detected", 
+#                                   .default = "not detected"),
+#             n_samples)  %>% 
+#     distinct() %>% 
+#   mutate(SampleContent2 = "Biofilm (g.)") %>% 
+#   filter(!Species %in% unlist(gut_OTU$Species))
+
+biofilm_g_new_detected <- 
+    data_long %>% 
+    filter(SampleContent2 %in% c("Biofilm (g.)")) %>% 
+    mutate(n_samples = n()) %>% 
+    ungroup() %>% 
+    mutate(samples = 
+             map(.x = samples, ~
+                   ungroup(.) %>% 
+                   distinct(Species, rel_abun_species) %>% 
+                   mutate(over_limit = if_else(rel_abun_species >= abun_limit, T, F)) %>% 
+                   filter(rel_abun_species > 0)  
+             )) %>% 
+    unnest(samples) %>%
+    distinct(SampleID, Species, over_limit, n_samples) %>% 
+    group_by(Species) %>% 
+    mutate(n_obs_tax_over_zero = n()) %>% ungroup() %>% 
+    group_by(Species, over_limit) %>%
+    reframe(
+      n_obs_tax = n(), 
+      n_obs_tax_over_zero,
+      is_core = ifelse(n_obs_tax >= 0.8*n_samples, T, F), 
+      core_type = case_when(n_obs_tax >= 0.8*n_samples & over_limit ~ "strict core",
+                            n_obs_tax >= 0.5*n_samples & over_limit ~ "general core",
+                            n_obs_tax >= 0.2*n_samples & over_limit & 0.2*n_samples > 1 ~ "loose core", 
+                            (n_obs_tax < 0.2*n_samples | !over_limit) & n_obs_tax_over_zero > 1  ~ "detected", 
+                            (n_obs_tax < 0.2*n_samples | !over_limit) & n_obs_tax_over_zero == 1  ~ "not detected", 
+                            .default = "missing"),
+            n_samples)  %>% 
+  distinct() %>% 
+   mutate(
+    core_type_f = factor(core_type, 
+                         levels = c("strict core", "general core", "loose core", 
+                                    #"CRAT", 
+                                    "detected", "not detected"
+                                    ))) %>% 
+  arrange(Species, core_type_f) %>% 
+  distinct(Species, .keep_all = T) %>% 
+  mutate(SampleContent2 = "Biofilm (g.)") %>% 
+  filter(!Species %in% unlist(gut_OTU$Species))
+
+
+biofilm_ep <- 
+    data_long %>% 
+    filter(SampleContent2 %in% c("Biofilm (e.p.)")) %>% 
+    mutate(n_samples = n()) %>% 
+    ungroup() %>% 
+    mutate(samples = 
+             map(.x = samples, ~
+                   ungroup(.) %>% 
+                   distinct(Species, rel_abun_species) %>% 
+                   mutate(over_limit = if_else(rel_abun_species >= abun_limit, T, F)) %>% 
+                   filter(rel_abun_species > 0)  
+             )) %>% 
+    unnest(samples) %>%
+    distinct(SampleID, Species, over_limit, n_samples) %>% 
+    group_by(Species) %>% 
+    mutate(n_obs_tax_over_zero = n()) %>% ungroup() %>% 
+    group_by(Species, over_limit) %>%
+    reframe(
+      n_obs_tax = n(), 
+      n_obs_tax_over_zero,
+      is_core = ifelse(n_obs_tax >= 0.8*n_samples, T, F), 
+      core_type = case_when(n_obs_tax >= 0.8*n_samples & over_limit ~ "strict core",
+                            n_obs_tax >= 0.5*n_samples & over_limit ~ "general core",
+                            n_obs_tax >= 0.2*n_samples & over_limit & 0.2*n_samples > 1 ~ "loose core", 
+                            (n_obs_tax < 0.2*n_samples | !over_limit) & n_obs_tax_over_zero > 1  ~ "detected", 
+                            (n_obs_tax < 0.2*n_samples | !over_limit) & n_obs_tax_over_zero == 1  ~ "not detected", 
+                            .default = "missing"),
+            n_samples)  %>% 
+  distinct() %>% 
+   mutate(
+    core_type_f = factor(core_type, 
+                         levels = c("strict core", "general core", "loose core", 
+                                    #"CRAT", 
+                                    "detected", "not detected"
+                                    ))) %>% 
+  arrange(Species, core_type_f) %>% 
+  distinct(Species, .keep_all = T) %>% 
+  mutate(SampleContent2 = "Biofilm (e.p.)") %>% 
+  filter(!Species %in% unlist(gut_OTU$Species))
+
+
+sediment <- 
+    data_long %>% 
+    filter(SampleContent2 %in% c("Sediment")) %>% 
+    mutate(n_samples = n()) %>% 
+    ungroup() %>% 
+    mutate(samples = 
+             map(.x = samples, ~
+                   ungroup(.) %>% 
+                   distinct(Species, rel_abun_species) %>% 
+                   mutate(over_limit = if_else(rel_abun_species >= abun_limit, T, F)) %>% 
+                   filter(rel_abun_species > 0)  
+             )) %>% 
+    unnest(samples) %>%
+    distinct(SampleID, Species, over_limit, n_samples) %>% 
+    group_by(Species) %>% 
+    mutate(n_obs_tax_over_zero = n()) %>% ungroup() %>% 
+    group_by(Species, over_limit) %>%
+    reframe(
+      n_obs_tax = n(), 
+      n_obs_tax_over_zero,
+      is_core = ifelse(n_obs_tax >= 0.8*n_samples, T, F), 
+      core_type = case_when(n_obs_tax >= 0.8*n_samples & over_limit ~ "strict core",
+                            n_obs_tax >= 0.5*n_samples & over_limit ~ "general core",
+                            n_obs_tax >= 0.2*n_samples & over_limit & 0.2*n_samples > 1 ~ "loose core", 
+                            (n_obs_tax < 0.2*n_samples | !over_limit) & n_obs_tax_over_zero > 1  ~ "detected", 
+                            (n_obs_tax < 0.2*n_samples | !over_limit) & n_obs_tax_over_zero == 1  ~ "not detected", 
+                            .default = "missing"),
+            n_samples)  %>% 
+  distinct() %>% 
+   mutate(
+    core_type_f = factor(core_type, 
+                         levels = c("strict core", "general core", "loose core", 
+                                    #"CRAT", 
+                                    "detected", "not detected"
+                                    ))) %>% 
+  arrange(Species, core_type_f) %>% 
+  distinct(Species, .keep_all = T) %>% 
+  mutate(SampleContent2 = "Sediment") %>% 
+  filter(!Species %in% unlist(gut_OTU$Species))
+  
+    
+
+
+best_core_group <- rbind(
+  biofilm_g_new_detected, biofilm_ep, sediment
+  ) %>% 
+  select(-over_limit, -n_obs_tax_over_zero, -core_type_f) %>% 
+  arrange(Species) %>% 
+  mutate(
+    core_type_f = factor(core_type, 
+                         levels = c("strict core", "general core", "loose core", 
+                                    #"CRAT", 
+                                    "detected", "not detected"
+                                    ))) %>% 
+  group_by(Species) %>% 
+  mutate(best_core_group = min(as.numeric(core_type_f))) %>% 
+  ungroup() %>% 
+  select(-core_type_f) %>% 
+  arrange(Species) %>% 
+  select(-n_obs_tax, -is_core, -n_samples) %>% 
+  pivot_wider(names_from = SampleContent2, values_from = core_type, values_fill = "not detected"
+              ) %>% 
+  mutate(best_core_group = recode(best_core_group, 
+                                  "1" = "strict core",
+                                  "2" = "general core", 
+                                  "3" = "loose core", 
+                                  #"4" = "CRAT",
+                                  "4" = "detected", 
+                                  "5" = "not detected"))
+
+
+core_species_all <- 
+  best_core_group %>% 
+  rename("core_type" = "best_core_group") %>% 
+  select(Species, core_type) %>% 
+  filter(core_type != "not detected")
+  
 
 
 ```
@@ -233,7 +468,6 @@ knitr::include_graphics(paste0(OutputPath, "plots/2_supplementary_figures/", plo
 ```
 
 
-
 # Section: Sample collection 
 
 
@@ -262,26 +496,45 @@ plot <- data_long %>%
   select(-samples) %>% 
   mutate(year = lubridate::year(SampleDate), 
          SampleDate = as.Date(SampleDate), 
-         SampleContent2 = fct_recode(SampleContent2, "Bio(e)"="Biofilm (e.p.)"),
+         SampleContent2 = fct_recode(SampleContent2, "Bio (e.p.)"="Biofilm (e.p.)"),
+                  SampleContent2 = fct_recode(SampleContent2, "Bio (g.)"="Biofilm (g.)"),
          SampleSite = str_remove(SampleSite, "_after"),
          SampleSite = str_replace(SampleSite, "Ø", " Ea"), 
           SampleSite = str_replace(SampleSite, "W", " W")) %>% 
   ggplot(aes(y = SampleSite, x = SampleDate, #color = SampleSite
              )) +
-  geom_point(aes(), position = position_dodge(0.8), size = 3) + 
+  geom_point(aes(color = SampleContent2), position = position_dodge(0.8), size = 2) + 
+    scale_color_manual(values = SampleContent2_colors) +
   # geom_text(aes(label = if_else(max(as.Date(data_long$SampleDate) == SampleDate), SampleSite, NULL), 
   #               group = SampleSite),  position = position_dodge(0.8)) +
-  theme_light() +
-  facet_nested(SampleContent2~x, strip = strip_background, scales = "free_y", space = "free") + 
-  theme(legend.position = "none", 
-        strip.background = element_rect(fill = "grey95"),
-        axis.title.y = element_blank(),
-        axis.title.x = element_blank(),
-        axis.text.y = element_text(size = 14))
+  theme_bw() +
+  guides(color = guide_legend(title = "Habitat", nrow = 1)) +
+  facet_nested(SampleContent2~x, #strip = strip_background, 
+               scales = "free_y", space = "free"
+               ) + 
+  theme(#axis.text.x = element_text(angle = 0, vjust = 0.5, hjust = 0.5, size = 14),
+        axis.text.y = element_text(size = 14, color="grey10"),
+        axis.text.x = element_text(size = 14, color="grey10"),
+        axis.title.x = element_text(size = 14), 
+        legend.text = element_text(size = 14,  color = "black"),
+        axis.title.y = element_text(size = 14),
+        panel.grid.major = element_line(), 
+        legend.position = "bottom",
+        legend.title = element_text(size = 14, color = "black", margin = margin(b = unit(5,"mm"))), 
+        panel.spacing=unit(2,"mm"),
+        panel.background = element_rect(fill = "white"),
+      strip.background.x=element_rect(color="grey90", fill="grey90"),
+      strip.background.y = element_rect(color="grey90", fill="grey90"),
+      panel.border=element_rect(color="grey10", fill = NA),
+      strip.text.y = element_text(size = 14, , angle = 0),
+      strip.text.x = element_text(size = 14, , angle = 0),
 
+        ) 
+  
+ 
 
 plot_name = "S2_sampling_timeline"
-ggsave(plot = plot, paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".png"), width = 8, height = 9)
+ggsave(plot = plot, paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".png"), width = 10, height = 6)
 ggsave(plot = plot, filename=paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".pdf"), width=8, height=9 , useDingbats=FALSE, limitsize=FALSE)
 knitr::include_graphics(paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".png"))
 
@@ -375,22 +628,26 @@ plot <- alpha_diversity_rarefied %>%
   #ggpubr::stat_compare_means(comparisons = stat.test)+ # Add pairwise comparisons p-value
   #stat_compare_means(label.y = 50)     # Add global p-value
   theme_bw() + 
-  guides(color = guide_legend(override.aes = list(size = 4), nrow = 1)) +
-  theme(axis.text.x = element_text(angle = 0, vjust = 0.5, hjust = 0.5, size = 14),
+  guides(color = guide_legend(override.aes = list(size = 4), nrow = 1, title = "Habitat")) +
+  theme(#axis.text.x = element_text(angle = 0, vjust = 0.5, hjust = 0.5, size = 14),
         axis.title.x = element_blank(), 
         strip.placement = "outside", 
         legend.text = element_text(size = 14),
-        axis.text.y = element_text(size = 12),
         axis.title.y = element_blank(),
         strip.text.x = element_text(size = 14), 
-        legend.title = element_blank(), 
+        legend.title =  element_text(size = 14), #element_blank(), 
         #strip.background = element_blank(), 
         strip.text = element_text(size = 14),
+        #strip.background=element_rect(color="grey30", fill="grey90"),
+        #panel.border=element_rect(color="grey10", fill = NA),
+        axis.text.y = element_text(size = 12, color="grey10"),
+        axis.text.x = element_text(size = 14, color="grey10"),
         panel.spacing=unit(2,"mm"),
-        legend.position = "bottom",
-        strip.background=element_rect(color="grey30", fill="grey90"),
-        panel.border=element_rect(color="grey10", fill = NA),
-        )
+        panel.background = element_rect(fill = "white"),
+      strip.background.x=element_rect(color="grey90", fill="grey90"),
+      strip.background.y = element_rect(color="grey90", fill="grey90"),
+      panel.border=element_rect(color="grey10", fill = NA),
+        legend.position = "bottom"        )
 
 plot_name = "S3_Diversity_measures"
 ggsave(plot = plot, paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".png"), 
@@ -409,17 +666,21 @@ plot <- data %>%
   amp_rankabundance(group_by = "SampleContent2", ) + 
   scale_color_manual(values = SampleContent2_colors) + 
   scale_fill_manual(values = SampleContent2_colors) +
-  theme(axis.text.x = element_text(angle = 0, vjust = 0.5, hjust = 0.5, size = 14),
+  theme_bw() + 
+  theme(#axis.text.x = element_text(angle = 0, vjust = 0.5, hjust = 0.5, size = 14),
+        axis.text.y = element_text(size = 14, color="grey10"),
+        axis.text.x = element_text(size = 14, color="grey10"),
         axis.title.x = element_text(size = 14), 
-        legend.text = element_text(size = 14),
-        axis.text.y = element_text(size = 14),
+        legend.text = element_text(size = 14,  color = "black"),
         axis.title.y = element_text(size = 14),
-        legend.title = element_blank(), 
         panel.grid.major = element_line(), 
-        legend.position = "bottom"
+        legend.position = "right",
+        legend.title = element_text(size = 14, color = "black", margin = margin(b = unit(5,"mm")))
         ) +
   scale_x_continuous(expand = c(0,0), transform = "log10") +
-  guides(color = guide_legend(nrow = 1))
+  guides(color = guide_legend(ncol = 1, title = "Habitat"),
+         fill = guide_legend(ncol = 1, title = "Habitat")
+         )
 
 plot_name = "S4_Rank_abundance"
 ggsave(plot = plot, paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".png"), 
@@ -428,10 +689,17 @@ ggsave(plot = plot, paste0(OutputPath, "plots/2_supplementary_figures/", plot_na
 knitr::include_graphics(paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".png"))
 
 
+theme(#legend.title = element_blank(), 
+        
+            legend.text = element_text(size = 14, color = "black"),
+    legend.title = element_text(size = 14, color = "black", margin = margin(b = unit(5,"mm")))
+        ) +
+
 ```
 
 
 ## Figure S5: Classified ASVs
+
 
 ```{r}
 
@@ -453,12 +721,11 @@ usearch_results <-
             .groups = "drop"
   )
 
-stacked_bar_classified <- function(data_long, tax_level, tax_rel_abun){
-  
-  tax_level_name <- ifelse(str_detect(data_long %>% sample_n(1) %>% unnest(samples) %>% 
-                                        filter(str_detect({{tax_level}},"nclassified", T) |
-                                                 str_detect({{tax_level}}, "midas", T)) %>% 
-                                        select({{tax_level}}) %>% unlist(), "g__"),
+
+tax_level_name <- ifelse(str_detect(data_long %>% sample_n(1) %>% unnest(samples) %>% 
+                                        filter(str_detect(Species,"nclassified", T) |
+                                                 str_detect(Species, "midas", T)) %>% 
+                                        select(Species) %>% unlist(), "g__"),
                            "genera", 
                            "species")
   tax_level_name <- tax_level_name[1]
@@ -470,19 +737,19 @@ stacked_bar_classified <- function(data_long, tax_level, tax_rel_abun){
              map(.x = samples, ~
                    ungroup(.) %>% 
                    mutate(uncla = 
-                            case_when(str_detect({{tax_level}}, "unclassified") & tax_level_name == "species" & 
+                            case_when(str_detect(Species, "unclassified") & tax_level_name == "species" & 
                                         !OTU %in% unlist(usearch_results$query) ~ "Unclassified ASVs", 
-                                      str_detect({{tax_level}}, "unclassified") & tax_level_name == "genera" ~ "Unclassified ASVs", 
-                                      str_detect({{tax_level}}, "unclassified") & tax_level_name == "species" &
+                                      str_detect(Species, "unclassified") & tax_level_name == "genera" ~ "Unclassified ASVs", 
+                                      str_detect(Species, "unclassified") & tax_level_name == "species" &
                                         OTU %in% unlist(usearch_results$query) ~ "Multiple species hits in the MiDAS database",
-                                      !str_detect({{tax_level}}, "unclassified")  & tax_level_name == "species" ~ "Species level classification",
-                                      !str_detect({{tax_level}}, "unclassified")  & tax_level_name == "genera" ~ "Genus level classification",
+                                      !str_detect(Species, "unclassified")  & tax_level_name == "species" ~ "Species level classification",
+                                      !str_detect(Species, "unclassified")  & tax_level_name == "genera" ~ "Genus level classification",
                                       .default = "missing"),
                     ) %>% 
-                   distinct(across(c({{tax_level}}, {{tax_rel_abun}}, uncla))) %>% 
-                   filter({{tax_rel_abun}} != 0) %>% 
+                   distinct(across(c(Species, rel_abun_species, uncla))) %>% 
+                   filter(rel_abun_species != 0) %>% 
                    group_by(uncla) %>% 
-                   summarise(sum_abun = sum({{tax_rel_abun}}), n_species = n(), .groups = "drop")
+                   summarise(sum_abun = sum(rel_abun_species), n_species = n(), .groups = "drop")
              )) %>% 
     unnest(samples) %>% 
     select(SampleContent2, System, uncla, sum_abun, n_species) %>% 
@@ -492,29 +759,41 @@ stacked_bar_classified <- function(data_long, tax_level, tax_rel_abun){
               .groups = "drop") %>% 
     pivot_longer(cols = -c(SampleContent2, System,uncla), names_to = "names", values_to = "values")
   
-  see3 <- see2 %>%  
-    mutate(p = case_when(
-      uncla == "Unclassified ASVs" ~ 0.05, 
-      str_detect(uncla, "level classification") ~ 0.5,
-      .default = 0.87),
+  
+  # group_by(SampleContent2, System,names) %>%
+  #   mutate(uncla = factor(uncla, levels = c("Unclassified ASVs", "Species level classification", "Multiple species hits in the MiDAS database"))) %>%
+  #   arrange(uncla) %>% 
+  
+  plot <- see2 %>%
+    mutate(uncla = factor(uncla, levels = c("Unclassified ASVs", "Species level classification", "Multiple species hits in the MiDAS database")), 
+           uncla = fct_rev(uncla)) %>%
+    group_by(SampleContent2, System,names) %>% 
+    arrange(desc(uncla)) %>% 
+      mutate(
+        y_axis = values/sum(values),
+        p = cumsum(y_axis),
+      # p = case_when(uncla == "Unclassified ASVs" ~ 0.05, 
+      # str_detect(uncla, "level classification") ~ 0.5,
+      # .default = 0.87),
       y = "",
        ) %>% 
-    ggplot(aes(fill = uncla, x = names, y = values)) + 
-    geom_bar(position="fill", stat="identity") + 
+    ungroup() %>% 
+    ggplot(aes(fill = uncla, x = names, y = y_axis)) + 
+    geom_col(position="fill", width = 0.98, #stat="identity"
+             ) + 
     ggh4x::facet_nested(y~System + SampleContent2) +
     geom_text(aes(label = ifelse(names == "mean", 
                                  paste0(round(values, 0), "%"), 
                                  paste0(round(values, 0))       
-    ), y = p), size = 8) + 
+    ), y = p - y_axis* 0.3), size = 8) + 
     scale_y_continuous(expand = c(0,0), labels = c(0, 25, 50, 75, 100)) +
     scale_x_discrete(labels = c("mean" = "Relative<br>abundance", 
                                  "mean_n" = paste0("Distinct<br>", tax_level_name)),
-                     #expand = c(0,0)
+                     expand = c(0,0)
      ) +
     scale_fill_manual(values =c("#80A2A8", "#B0C5C9", "#CCCCCC","#1E395B", "gray60","gray90", "#406454", "#438954","red")) +
     guides(fill = guide_legend()) +
     ylab("Fraction") +
-    #theme_xaringan(css_file = "xaringan-themer.css") +
     theme(
       strip.text.x = element_text(size = 24, color = "black"),
       axis.text.y = element_text(size = 19, color = "black"),
@@ -532,21 +811,17 @@ stacked_bar_classified <- function(data_long, tax_level, tax_rel_abun){
       panel.grid.major = element_line(linewidth = 0.2, color = "gray90"), 
       panel.spacing=unit(1,"mm"),
       panel.background = element_rect(fill = "white"),
-      strip.background.x=element_rect(color="grey30", fill="grey90"),
+      strip.background.x=element_rect(color="grey90", fill="grey90"),
       strip.background.y = element_blank(),
-      panel.border=element_rect(color="grey30", fill = NA),
+      panel.border=element_rect(color="grey90", fill = NA),
     ) + 
     guides(fill = guide_legend(override.aes = list(size = 2), nrow = 1)
            )
   
-  tax_level_name
-  see3
+  plot
   
-}
+  
 
-
-plot <- data_long %>% 
-  stacked_bar_classified(., Species, rel_abun_species)
 
 plot_name = "S5_stacked_bar_classified_species_0.6_cut_off"
 ggsave(plot = plot, paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".png"), width = 18, height = 11)
@@ -555,6 +830,7 @@ knitr::include_graphics(paste0(OutputPath, "plots/2_supplementary_figures/", plo
 rm(stacked_bar_classified)
 
 ```
+
 
 
 ## Figure 2: Overall PCA and distinct OTUs {.tabset}
@@ -584,13 +860,13 @@ plot <- alpha_diversity_rarefied %>%
   theme(#axis.text.x = element_text(angle = 0, vjust = 0.5, hjust = 0.5, size = 14),
         axis.title.x = element_blank(), 
         strip.placement = "outside", 
-        legend.text = element_text(size = 14),
-        axis.text.y = element_text(size = 12),
+        legend.text = element_text(size = 14, color = "black"),
+        axis.text.y = element_text(size = 12, color = "black"),
         #axis.title.y = element_blank(),
-        strip.text.x = element_text(size = 14), 
+        strip.text.x = element_text(size = 14, color = "black"), 
         legend.title = element_blank(), 
         strip.background = element_blank(), 
-        strip.text = element_text(size = 14)
+        strip.text = element_text(size = 14, color = "black")
         )
 
 plot_name = "F2_A_Diversity_measures"
@@ -615,10 +891,13 @@ PCOA_OTU <- data_long %>%
   scale_color_manual(values = SampleContent2_colors) +
   scale_fill_manual(values = SampleContent2_colors) +
   theme_bw() + 
-  guides(fill = guide_legend(title = "Sample type", nrow = 1),
-         color = guide_legend(title = "Sample type", , nrow = 1)) +
+  guides(fill = guide_legend(title = "Habitat   ", nrow = 1),
+         color = guide_legend(title = "Habitat   ", , nrow = 1)) +
   theme(#legend.title = element_blank(), 
-        legend.position = "bottom")
+        legend.position = "bottom",
+        #axis.text.y = element_text(size = 12, color = "black"),
+        #axis.text.x = element_text(size = 12, color = "black"),
+        )
 PCOA_OTU
 
 # plot_name = "F2_B_ordination_samples_types"
@@ -654,18 +933,18 @@ plot1 <- plot +
            label.padding = unit(0.01, "mm")) +
   annotate("richtext", x = 0.05, y = 0.67, hjust = 0, size = 5,
            label.colour = "white",label.padding = unit(0.01, "mm"),
-           label = "ADONIS: Sample type") +
+           label = "ADONIS: Habitat") +
   plot_layout(widths = c(1.2, 1), 
     ncol = 2,
     guides = "collect"
               ) + 
   plot_annotation(tag_levels = "A") & #list(c('B', 'C'), '1')) & 
   theme(legend.position = "bottom",
-        axis.text = element_text(size = 16),
-        axis.title = element_text(size = 18),
-        plot.tag = element_text(size = 30), 
-        legend.title = element_text(size = 18),
-        legend.text = element_text(size = 16))
+        axis.text = element_text(size = 16, color = "black"),
+        axis.title = element_text(size = 18, color = "black"),
+        plot.tag = element_text(size = 30, color = "black"), 
+        legend.title = element_text(size = 18, color = "black"),
+        legend.text = element_text(size = 16, color = "black"))
 plot_name = "F2_Diversity_measures_and_OTU_PCOA"
 ggsave(plot = plot1, paste0(OutputPath, "plots/1_results/", plot_name, ".png"), 
        width = 12.5, height = 7)
@@ -850,19 +1129,17 @@ plot <-
                                   .default = "missing",
                                   ))) +  #)
   theme(axis.text.y = element_markdown(size = 12, color = "black"),
-        legend.text = element_text(size = 12, color = "black"),
-        legend.title = element_text(vjust = 1, size = 16),
-        #strip.text.y = element_blank(),
+        legend.text = element_text(size = 12, color = "black", margin = margin(l = unit(5,"mm"))),
+        legend.title = element_text(vjust = 0.8, size = 16, margin = margin(r = unit(15,"mm"))),
         panel.grid = element_blank(),
         axis.ticks.x = element_blank(), 
-              panel.spacing=unit(1,"mm"),
+        panel.spacing=unit(0.4,"mm"),
         legend.position = "bottom",
         strip.text.x = element_text(size = 16),
         axis.title = element_blank(), 
         strip.background = element_rect(fill = "grey90"),
         strip.text.y = element_text(angle = 0, size = 16),
         axis.text.x = element_blank() #element_text(size = 12, hjust = 1, vjust = 1, angle = 45),
-        #plot.background = element_rect(fill = "grey70")
         ) +
   guides(fill = guide_legend(reverse = TRUE,
                              override.aes = list(color = "black", 
@@ -884,9 +1161,9 @@ knitr::include_graphics(paste0(OutputPath, "plots/2_supplementary_figures/", plo
 # Section: Immigration of process-critical bacteria from wastewater to activated sludge
 
 
-## Figure 3: Growth bar plot
+## OLD: Figure 3: Growth bar plot
 
-```{r}
+```{r, include=FALSE}
 
 
 plot <- growing_dying_bar_plot(data_long %>% ungroup() %>% 
@@ -930,7 +1207,7 @@ knitr::include_graphics(paste0(OutputPath, "plots/1_results/", plot_name, ".png"
 ```
 
 
-## Figure S7: Growth bar plot each SWW site 
+## OLD: Figure S7: Growth bar plot each SWW site 
 
 ```{r}
 
@@ -973,7 +1250,8 @@ knitr::include_graphics(paste0(OutputPath, "plots/2_supplementary_figures/", plo
 
 ```
 
-## Figure S8: Most abundant species across all
+
+## Figure S11: Most abundant species across all
 
 ```{r}
 
@@ -1004,6 +1282,8 @@ top_each_samplecontent <- data_long %>%
   slice_max(order_by = mean, n = 10) %>% ungroup() %>% 
   select(-mean)
 
+
+top_each_samplecontent %>% distinct(Species)
 # 
 top_each_samplecontent_groups <- top_each_samplecontent %>%
   group_by(Species) %>% 
@@ -1136,14 +1416,14 @@ plot <-
                                   .default = "missing",
                                   ))) +  #)
   theme(axis.text.y = element_markdown(size = 12, color = "black"),
-        legend.text = element_text(size = 12, color = "black"),
-        legend.title = element_text(vjust = 1, size = 16),
+        legend.text = element_text(size = 12, color = "black", margin = margin(l = unit(5,"mm"))),
+        legend.title = element_text(vjust = 0.8, size = 16, margin = margin(r = unit(15,"mm"))),
+        panel.spacing=unit(0.4,"mm"),
         #strip.text.y = element_blank(),
         panel.grid = element_blank(),
         axis.ticks.x = element_blank(), 
         legend.position = "bottom",
         strip.text.x = element_text(size = 16),
-        panel.spacing=unit(1,"mm"),
         axis.title = element_blank(), 
         strip.background = element_rect(fill = "grey90"),
         strip.text.y = element_text(angle = 0, size = 16),
@@ -1155,7 +1435,7 @@ plot <-
                                                  size = 0.5), nrow = 1))
 
 
-plot_name = "S8_heatmap_top10_abundant_species_in_all"
+plot_name = "S11_heatmap_top10_abundant_species_in_all"
 ggsave(plot = plot, paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".png"), width = 13.5, height = 10)
 ggsave(plot = plot, paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".pdf"), 
        limitsize = F,  useDingbats=FALSE, 
@@ -1167,13 +1447,189 @@ knitr::include_graphics(paste0(OutputPath, "plots/2_supplementary_figures/", plo
 ```
 
 
-
-
-
 # Section: Core species in the sewer microbiome
 
-## Figure 4: PCoA of sewer envionments (Sample types)
+## Figure 3: PCoA of sewer envionments (Sample types)
 
+### Figure 3A
+
+```{r}
+
+
+  colors <- c("#A7C7E7","#D6604D", "#F4A582", "#FDDBC7", "grey90","grey60")
+  
+  colors <- c("#1E3F66", "grey75")   #"#4D4D4D", "#A6A6A6", 
+
+  #colors <- c("#A7C7E7","#D6604D", "#F4A582", "#FDDBC7", "white","grey90", "grey60") ## Added
+
+  
+  # DF ready for growth 
+  
+  gut_ASV <- data_long %>% sample_n(1) %>% unnest(samples) %>%
+    select(OTU, Species) %>%
+    filter(OTU %in% unlist(gut_OTU$OTU)) %>%
+    distinct(OTU) %>% unlist()
+  
+  #data_long %>% distinct(SampleContent3)
+  
+  source_df <- data_long %>% sample_n(1) %>% unnest(samples) %>% 
+    select(OTU, Species) %>% 
+    mutate(
+      #core_group = NA, 
+      #core_group = if_else(is.na(core_group), "Unknown source", core_group),
+      #core_group = if_else(core_group == "not detected", "Unknown source", core_group),
+      core_group = if_else(OTU %in% gut_ASV, "Gut species", "Other source"),
+      core_group = factor(core_group, 
+                          levels = c("Gut species", 
+                                     #"strict core","general core", "loose core", 
+                                     #"CRAT", ## Added
+                                     "Other source"),
+                          labels = c("Gut species", 
+                                     #"Strict core","General core", "Loose core",
+                                     # "CRAT", ## Added
+                                     "Other source"))
+    ) %>% 
+    distinct(core_group, OTU) %>% 
+    rename("origin_groups" = "core_group")
+  
+  
+  # Make cummulative abundace plot for sewer core groups
+  
+  # - display both growth groups and origin in one plot
+  #group_by_vector = "SampleContent2"
+  #facet_by = "SampleContent2"
+  
+  tidy_all_influents <- data_long %>%
+    filter(SampleContent2 %in% c("AS", "IWW", "SWW")) %>% 
+    filter(!SampleSite %in% c("AalborgWest_before")) %>% 
+    select(c(SampleID, SampleContent3, samples, System)) %>% 
+    ungroup() %>% 
+    mutate(samples = 
+             map(samples, ~ 
+                   ungroup(.) %>% 
+                   select(OTU, rel_abun_ASV, Species, rel_abun_species) %>%
+                   left_join(source_df, by = c("OTU")) %>% 
+                   distinct(Species, rel_abun_species, origin_groups) %>% 
+                   filter(rel_abun_species != 0) %>% 
+                   group_by(origin_groups) %>% 
+                   summarise(origin_abun = sum(rel_abun_species),
+                             count_s_origin = n(),
+                             .groups = "drop") %>% 
+                   ungroup()
+             )) %>% 
+    unnest(samples) %>% 
+    group_by(SampleContent3, System, origin_groups) %>% 
+    summarise(
+      #origin_abun_sd = sd(origin_abun),  ### Grouping by ALL groups to make borders
+      origin_abun_mean = mean(origin_abun, rm.na = T), 
+      origin_species_mean = mean(count_s_origin), 
+      #origim_species_sd = sd(count_s_origin), 
+      .groups = "drop"
+    ) %>% 
+    group_by(SampleContent3) %>%
+    mutate(
+      sum_abun = sum(origin_abun_mean),
+      sum_count = sum(origin_species_mean),
+      normalized_groups_abun_median = origin_abun_mean / sum_abun * 100,
+      normalized_groups_species_median = origin_species_mean / sum_count * 100,
+    ) %>% 
+    ungroup()
+  
+  
+  # Make cummulative plot of species distributions in terms of relative abundances
+  
+  barplot_relative_abundance <- 
+    tidy_all_influents %>% 
+    select(-origin_abun_mean) %>% 
+    pivot_longer(cols = c(normalized_groups_abun_median, normalized_groups_species_median), 
+                 names_to = "type", values_to = "values") %>% 
+    arrange(desc(origin_groups)) %>% 
+    group_by(SampleContent3, type) %>%   
+    mutate(
+      label = case_when(type == "normalized_groups_abun_median" & values >= 2.5 ~ paste0(round(values,1), "%"), 
+                        type == "normalized_groups_abun_median" & values < 2.5 ~ NA, 
+                        type == "normalized_groups_species_median" & values < 0 ~ NA,
+                        type == "normalized_groups_species_median" & values >= 0 ~ paste0(round(origin_species_mean,0)), 
+                        .default = "missing"
+      ), 
+      type = if_else(type == "normalized_groups_abun_median", 
+                     "Cummulative abundance",
+                     "No. of species and unclassified ASVs (transformed to %)"),
+      newy=cumsum(values), 
+      #group_name = 
+      SampleContent3 = factor(SampleContent3, 
+                          levels = c(#"Biofilm (g.)",  "Sediment", "Biofilm (e.p.)", 
+                                     "SWW\n(g.)", "SWW\n(e.p.)", # "SWW", 
+                                     "IWW","AS"),
+                          labels = c(#"Biofilm\n(g.)",  "Sedi-\nment", "Biofilm\n(e.p.)",
+                            "SWW (g.)", "SWW (e.p.)", # "SWW", 
+                                     "IWW","AS")),
+      
+      v = " ",
+    ) %>% ungroup() %>% 
+    filter(type == "Cummulative abundance") %>% 
+    ################## Pattern version
+    ggplot(aes(fill=origin_groups, y=values, x=SampleContent3)) + 
+    geom_bar(position="stack",stat="identity",
+    )+
+    scale_fill_manual(values = colors) + 
+    scale_color_manual(values = c("black","grey95")) + 
+    scale_alpha_manual(values = c(1,1,1)) + 
+    geom_hline(yintercept=seq(25, 100, by=25), linewidth = unit(0.5, "lines"), linetype = "dotted") +
+    geom_label(aes(x = SampleContent3, y = newy-(values*0.5),
+                   color = if_else(str_detect(origin_groups, "Gut"), "white", "black"),
+                   label = label, 
+    ), 
+    #position = position_dodge(width = 0.3),
+    label.padding = unit(0.1, "lines"),
+    vjust = 0.5, hjust = 0.5, 
+    #vjust = "inward", hjust = "inward",
+    label.size = 0.25,
+    #hjust = "inward", 
+    alpha = 0.8, size = 5,
+    #fill = "white", 
+    show.legend = FALSE
+    ) +
+    ylab("Cummulative abundance [%]") + 
+    guides(label = "none", 
+           color = "none", 
+           # pattern = guide_legend(title = "Source of bacteria",
+           #                        override.aes = list(fill ="white", color = "black", pattern_spacing = 0.01)), 
+           fill = guide_legend(nrow = 1, override.aes = list(
+             #fill = c("#6E93C7", "#BC8F8F", "#15B05C", "#D3D3D3", "#243592", "#506424"), 
+             pattern = "none"), 
+             title = "Source  ")) + 
+    # scale_fill_manual(values = level_colors) +
+    # scale_color_manual(values = level_colors) +
+    theme(legend.text = element_markdown(size = 14), 
+          panel.background = element_rect(fill = "white"),
+          axis.ticks.y = element_line(linewidth = unit(0.5, "lines"), color  = "black"),
+          axis.title.y = element_text(size = 16, color  = "black"),# element_blank(), #element_text(size = 16), 
+          axis.title.x = element_blank(), 
+          text = element_text(color  = "black"),
+          legend.key = element_rect(linetype = 1), 
+          strip.text.x = element_text(angle = 0, size = 14, vjust = 0.5, hjust = 0, 
+                                    margin = margin(r = 2, b = 2, t= 2, l=2,unit = "pt")), 
+        strip.text.y = element_text(size = 1), 
+        legend.position = "bottom",
+        axis.text.y = element_text(size = 14, color  = "black"), 
+        axis.text.x = element_blank(), #element_markdown(angle = 90, size = 12),
+        panel.spacing=unit(1,"mm"),
+        axis.ticks.x = element_blank(), 
+        legend.title = element_blank(), 
+        strip.background.x = element_rect(fill = "grey90"),
+        strip.background.y = element_blank()
+        ) +
+    scale_y_continuous(expand = c(0.015,0), breaks = c(0,25,50,75,100), labels = c("0%","25%","50%","75%","100%")) +
+    scale_x_discrete(expand = c(0,0)) + 
+    ggh4x::facet_nested(v~System+SampleContent3, scales = "free_x", space = "free")
+
+
+
+
+```
+
+#### Adonis for PCoA
 
 ```{r}
 
@@ -1192,6 +1648,8 @@ asis_output(x)
 
 ```
 
+### PCoA 
+
 
 ```{r}
 
@@ -1204,18 +1662,22 @@ PCOA_genus <- data_long %>%
   scale_color_manual(values = SampleContent2_colors) +
   scale_fill_manual(values = SampleContent2_colors) +
   theme_bw() + 
-  guides(fill = guide_legend(title = "Sample type"),
-         color = guide_legend(title = "Sample type")) +
+  guides(fill = guide_legend(title = "Habitat"),
+         color = guide_legend(title = "Habitat")) +
   theme(#legend.title = element_blank(), 
-        legend.position = "right") +
+        legend.position = "right",
+        legend.text = element_markdown(size = 14),
+        legend.title = element_blank(),
+        axis.text = element_text(size = 14, color  = "black"),
+        axis.title = element_text(size = 16, color  = "black")) +
   annotate("richtext",  x = -0.5, y = -0.47,
            label.colour = "white", 
            label = 
-              "R<sup>2</sup> = 41%, p<0.001", hjust = 0, size = 4, 
+              "R<sup>2</sup> = 41%, p<0.001", hjust = 0, size = 5, 
            label.padding = unit(0.01, "mm")) +
-  annotate("richtext", x = -0.5, y = -0.43, hjust = 0, size = 4,
+  annotate("richtext", x = -0.5, y = -0.43, hjust = 0, size = 5,
            label.colour = "white",label.padding = unit(0.01, "mm"),
-           label = "ADONIS: Sample type") 
+           label = "ADONIS: Habitat") 
   
 
 labs <- PCOA_genus$data %>% 
@@ -1239,7 +1701,7 @@ labs <- PCOA_genus$data %>%
   #                  show.legend = F)
 
 
-plot_name = "F4_PCA_results_sewer_envionments_without_SWW"
+plot_name = "F3_PCA_results_sewer_envionments_without_SWW"
 ggsave(plot = PCOA_genus, paste0(OutputPath, "plots/1_results/", plot_name, ".png"), 
        width = 6, height = 4.5)
 ggsave(plot = PCOA_genus, paste0(OutputPath, "plots/1_results/", plot_name, ".pdf"), limitsize = F,  useDingbats=FALSE, 
@@ -1250,8 +1712,65 @@ knitr::include_graphics(paste0(OutputPath, "plots/1_results/", plot_name, ".png"
 ```
 
 
-## Figure S9: PCoA of sewer envionments (Sample sites)
 
+## Merge plots for figure 3
+
+```{r}
+
+plot <- 
+  barplot_relative_abundance +
+  plot_spacer() + PCOA_genus + plot_spacer() +
+  plot_annotation(tag_levels = "A") + 
+  plot_layout(ncol = 2,#, guides = "collect", 
+               widths = c(1,1), ) & 
+  theme(plot.tag = element_text(size = 30),
+        legend.position = "bottom")
+
+
+
+plot <- 
+    plot_spacer() + 
+  barplot_relative_abundance + 
+  plot_spacer() + 
+  PCOA_genus + guides(fill = guide_legend(title = "Habitat  "),
+                      color = guide_legend(title = "Habitat  ")) +
+  plot_spacer() + 
+  plot_annotation(tag_levels = "A") + 
+  plot_layout(
+    #guides = "collect",
+    design = c(
+      area(1, 1),
+      area(2, 1, 3, 1),  # First plot spans 3 rows in the first column
+      area(1, 2),        # Spacer in the second column
+      area(2, 2),        # PCOA_genus in the second column
+      area(3, 2)         # Spacer in the second column below PCOA_genus
+    ),
+    widths = c(0.8, 1),  # Make the first column wider
+    heights = c(0.00000001, 1, 0.000001)  # Custom heights for rows
+  ) & 
+  theme(plot.tag = element_text(size = 30),
+        legend.title = element_text(size = 16),
+        legend.position = "bottom")
+
+plot_name = "F3_gut_fractions_and_PCOA"
+ggsave(plot = plot, paste0(OutputPath, "plots/1_results/", plot_name, ".png"), 
+        width = 12, height = 8)
+ggsave(plot = plot, paste0(OutputPath, "plots/1_results/", plot_name, ".pdf"), limitsize = F, useDingbats=FALSE, 
+       width = 12, height = 8)
+
+knitr::include_graphics(paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".png"))
+
+
+
+
+```
+
+
+
+
+
+
+## Figure S8: PCoA of sewer envionments (Sample sites)
 
 
 ```{r}
@@ -1291,10 +1810,16 @@ PCOA_genus <- data_long %>%
   scale_shape_manual(values = c(16,17)) +
   theme_bw() + 
   guides(fill = guide_legend(title = "Sample Site"),
-         color = guide_legend(title = "Sample type", override.aes = list(shape = c(16,17))), 
-         shape = guide_legend(title = "Sample type")) +
+         color = guide_legend(title = "Habitat", override.aes = list(shape = c(16,17))), 
+         shape = guide_legend(title = "Habitat")) +
   theme(#legend.title = element_blank(), 
-        legend.position = "right") +
+    axis.title =element_text(size = 14),
+        legend.position = "right",
+        axis.text.y = element_text(size = 14, color="grey10"),
+        axis.text.x = element_text(size = 14, color="grey10"),
+            legend.text = element_text(size = 14, color = "black"),
+    legend.title = element_text(size = 14, color = "black", margin = margin(b = unit(5,"mm")))
+        ) +
   annotate("richtext", x = -0.5, y = -0.37, hjust = 0, size = 4,
            label.colour = "white",label.padding = unit(0.01, "mm"),
            label = 
@@ -1306,7 +1831,7 @@ PCOA_genus <- data_long %>%
   annotate("richtext", x = -0.5, y = -0.44, hjust = 0, size = 4,
            label.colour = "white",label.padding = unit(0.01, "mm"),
            label = 
-             "ADONIS: Sample type") +
+             "ADONIS: Habitat") +
   annotate("richtext", x = -0.5, y = -0.465, hjust = 0,  size = 4, 
            label.colour = "white",label.padding = unit(0.01, "mm"),
            label = 
@@ -1322,7 +1847,7 @@ labs <- PCOA_genus$data %>%
   sample_n(1)
 
 
-plot_name = "FXX_PCA_results_sewer_envionments_samplesite"
+plot_name = "S8_PCA_results_sewer_envionments_samplesite"
 ggsave(plot = PCOA_genus, paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".png"), 
        width = 8, height = 6.5)
 ggsave(plot = PCOA_genus, paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".pdf"), limitsize = F,  useDingbats=FALSE, 
@@ -1333,13 +1858,15 @@ knitr::include_graphics(paste0(OutputPath, "plots/2_supplementary_figures/", plo
 ```
 
 
-## Figure S10: Most abundant species across all sites - sewer microbiome
+## Figure S9: Most abundant species across all sites - sewer microbiome
 
 ```{r}
 
+
 # Create the bins and corresponding colors
-bins <- c(0,0.0000000000000000001,0.01, 0.1, 1, 5, 10, Inf)
+bins <- c(0,0.0000000000000000001, 0.01, 0.1, 1, 5, 10, Inf)
 colors <- c("grey90","white","#FFF5EB", "#F5C9B0", "#EC9E75", "#E2733B", "#D94801")
+
 
 ## Other bins (remember to change labels manually)
 #bins <- c(0, 0.01, 0.05,0.1, 1, 5, Inf)
@@ -1503,18 +2030,18 @@ plot <-
                                   .default = "missing",
                                   ))) +  #)
   theme(axis.text.y = element_markdown(size = 12, color = "black"),
-        legend.text = element_text(size = 12, color = "black"),
-        legend.title = element_text(vjust = 1, size = 16),
+        legend.text = element_text(size = 12, color = "black", margin = margin(l = unit(5,"mm"))),
+        legend.title = element_text(vjust = 0.8, size = 16, margin = margin(r = unit(15,"mm"))),
         #strip.text.y = element_blank(),
         panel.grid = element_blank(),
         #axis.ticks.x = element_blank(), 
         legend.position = "bottom",
         strip.text.x = element_text(size = 16),
-        panel.spacing=unit(1,"mm"),
+        panel.spacing=unit(0.4,"mm"),
         axis.title = element_blank(), 
         strip.background = element_rect(fill = "grey90"),
         strip.text.y = element_blank(),#element_text(angle = 0, size = 16),
-        axis.text.x = element_text(size = 12#, hjust = 1, vjust = 1, angle = 45
+        axis.text.x = element_text(size = 12, color = "black"#, hjust = 1, vjust = 1, angle = 45
                                    ),
         #plot.background = element_rect(fill = "grey70")
         ) +
@@ -1523,7 +2050,7 @@ plot <-
                                                  size = 0.5), nrow = 1))
 
 
-plot_name = "S10_heatmap_top30_abundant_species_in_sewer_microbiome"
+plot_name = "S9_heatmap_top30_abundant_species_in_sewer_microbiome"
 ggsave(plot = plot, paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".png"), width = 12.5, height = 9.5)
 ggsave(plot = plot, paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".pdf"), 
        limitsize = F,  useDingbats=FALSE, 
@@ -1692,7 +2219,7 @@ knitr::include_graphics(paste0(OutputPath, "plots/2_supplementary_figures/", plo
 
 
 
-## Figure 5: Stacked bar - Best core
+## Figure 4: Stacked bar - Best core
 
 ```{r}
 # Define function 
@@ -1709,6 +2236,13 @@ stacked_bar_for_article <- function(data_long_f = data_long,
   
   colors <- c("#A7C7E7","#D6604D", "#F4A582", "#FDDBC7", "grey90","grey60")
   
+colors <- c("#1E3F66", "#41729F", "#76A5C9", "#B0D0E8",  "grey90","grey60")   #"#4D4D4D", "#A6A6A6", 
+
+gradient2 <- c("#A6A6A6", "#006400", "#2C804A", "#7AA36E")
+
+  
+  #colors <- c("#A7C7E7","#D6604D", "#F4A582", "#FDDBC7", "white","grey90", "grey60") ## Added
+
   
   # DF ready for growth 
   
@@ -1730,9 +2264,13 @@ stacked_bar_for_article <- function(data_long_f = data_long,
       core_group = if_else(OTU %in% gut_ASV, "Gut species", core_group),
       core_group = factor(core_group, 
                           levels = c("Gut species", 
-                                     "strict core","general core", "loose core", "detected","Unknown source"),
+                                     "strict core","general core", "loose core", 
+                                     #"CRAT", ## Added
+                                     "detected","Unknown source"),
                           labels = c("Gut species", 
-                                     "Strict core","General core", "Loose core","Detected","Unknown source"))
+                                     "Strict core","General core", "Loose core",
+                                     # "CRAT", ## Added
+                                     "Detected in the sewer microbiome","Unknown source"))
     ) %>% 
     distinct(core_group, OTU) %>% 
     rename("origin_groups" = "core_group")
@@ -1802,12 +2340,12 @@ stacked_bar_for_article <- function(data_long_f = data_long,
                         .default = "missing"
       ), 
       type = if_else(type == "normalized_groups_abun_median", 
-                     "Cummulative abundance",
-                     "No. of species and unclassified ASVs (transformed to %)"),
+                     "Cummulative abundance [%]",
+                     "No. of species (transformed) [%]"),
       newy=cumsum(values), 
       #group_name = 
       group_name = factor(group_name, 
-                          levels = c("Biofilm (g.)",  "Sediment","Biofilm (e.p.)", "SWW\n(g.)", "SWW\n(e.p.)", # "SWW", 
+                          levels = c("Biofilm (g.)",  "Sediment", "Biofilm (e.p.)", "SWW\n(g.)", "SWW\n(e.p.)", # "SWW", 
                                      "IWW","AS"),
                           labels = c("Biofilm\n(g.)",  "Sedi-\nment", "Biofilm\n(e.p.)","SWW\n(g.)", "SWW\n(e.p.)", # "SWW", 
                                      "IWW","AS")),
@@ -1820,9 +2358,10 @@ stacked_bar_for_article <- function(data_long_f = data_long,
     geom_bar(position="stack",stat="identity",
     )+
     scale_fill_manual(values = colors) + 
-    scale_color_manual(values = colors) + 
+    scale_color_manual(values = c("black","grey95")) + 
     scale_alpha_manual(values = c(1,1,1)) + 
-    geom_label(aes(x = group_name, y = newy-(values*0.5), 
+    geom_label(aes(x = group_name, y = newy-(values*0.5),
+                   color = if_else(str_detect(origin_groups, "Gut") | str_detect(origin_groups, "trict"), "white", "black"),
                    label = label
     ), 
     #position = position_dodge(width = 0.3),
@@ -1836,12 +2375,12 @@ stacked_bar_for_article <- function(data_long_f = data_long,
     show.legend = FALSE
     ) + 
     geom_hline(yintercept=seq(25, 100, by=25), linewidth = unit(0.5, "lines"), linetype = "dotted") +
-    ylab("Percent [%]") + 
+    ylab(type_select) + 
     guides(label = "none", 
            color = "none", 
            # pattern = guide_legend(title = "Source of bacteria",
            #                        override.aes = list(fill ="white", color = "black", pattern_spacing = 0.01)), 
-           fill = guide_legend(nrow = 1, override.aes = list(
+           fill = guide_legend(nrow = 2, override.aes = list(
              #fill = c("#6E93C7", "#BC8F8F", "#15B05C", "#D3D3D3", "#243592", "#506424"), 
              pattern = "none"), 
              title = "Source")) + 
@@ -1850,19 +2389,19 @@ stacked_bar_for_article <- function(data_long_f = data_long,
     theme(legend.text = element_markdown(size = 16), 
           panel.background = element_rect(fill = "white"),
           axis.ticks.y = element_line(linewidth = unit(0.5, "lines"), color  = "black"),
-          axis.title.y = element_blank(), #element_text(size = 16), 
+          axis.title.y = element_text(size = 16), 
           axis.title.x = element_blank(), 
           text = element_text(color  = "black"),
           legend.key = element_rect(linetype = 1), 
-          strip.text.x = element_text(angle = 0, size = 15, vjust = 0.5, hjust = 0, 
+          strip.text.x = element_text(angle = 0, size = 14, vjust = 0.5, hjust = 0, 
                                     margin = margin(r = 2, b = 2, t= 2, l=2,unit = "pt")), 
         strip.text.y = element_text(size = 1), 
         legend.position = "bottom",
-        axis.text.y = element_text(size = 16, color  = "black"), 
+        axis.text.y = element_text(size = 14, color  = "black"), 
         axis.text.x = element_blank(), #element_markdown(angle = 90, size = 12),
         panel.spacing=unit(1,"mm"),
         axis.ticks.x = element_blank(), 
-        legend.title = element_blank(), 
+        legend.title = element_markdown(size = 16,  margin = margin(r = unit(15,"mm"))), 
         strip.background.x = element_rect(fill = "grey90"),
         strip.background.y = element_blank()
         ) +
@@ -1876,126 +2415,8 @@ stacked_bar_for_article <- function(data_long_f = data_long,
 ```
 
 ```{r}
-## Find "best" core group
-
-abun_limit = 0.01
-
-biofilm_g <- 
-    data_long %>% 
-    filter(SampleContent2 %in% c("Biofilm (g.)")) %>% 
-    mutate(n_samples = n()) %>% 
-    ungroup() %>% 
-    mutate(samples = 
-             map(.x = samples, ~
-                   ungroup(.) %>% 
-                   distinct(Species, rel_abun_species) %>% 
-                   filter(rel_abun_species >= abun_limit) 
-             )) %>% 
-    unnest(samples) %>%
-    distinct() %>% 
-    group_by(Species) %>%
-    reframe(n_obs_tax = n(),
-            is_core = ifelse(n_obs_tax >= 0.8*n_samples, T, F), 
-            core_type = case_when(n_obs_tax >= 0.8*n_samples ~ "strict core",
-                                  n_obs_tax >= 0.5*n_samples ~ "general core",
-                                  n_obs_tax >= 0.2*n_samples & 0.2*n_samples > 1 ~ "loose core", 
-                                  n_obs_tax < 0.2*n_samples & n_obs_tax > 1  ~ "detected", 
-                                  .default = "not detected"),
-            n_samples)  %>% 
-    distinct() %>% 
-  mutate(SampleContent2 = "Biofilm (g.)") %>% 
-  filter(!Species %in% unlist(gut_OTU$Species))
-
-biofilm_ep <- 
-    data_long %>% 
-    filter(SampleContent2 %in% c("Biofilm (e.p.)")) %>% 
-    mutate(n_samples = n()) %>% 
-    ungroup() %>% 
-    mutate(samples = 
-             map(.x = samples, ~
-                   ungroup(.) %>% 
-                   distinct(Species, rel_abun_species) %>% 
-                   filter(rel_abun_species >= abun_limit) 
-             )) %>% 
-    unnest(samples) %>%
-    distinct() %>% 
-    group_by(Species) %>%
-    reframe(n_obs_tax = n(),
-            is_core = ifelse(n_obs_tax >= 0.8*n_samples, T, F), 
-            core_type = case_when(n_obs_tax >= 0.8*n_samples ~ "strict core",
-                                  n_obs_tax >= 0.5*n_samples ~ "general core",
-                                  n_obs_tax >= 0.2*n_samples & 0.2*n_samples > 1 ~ "loose core", 
-                                  n_obs_tax < 0.2*n_samples & n_obs_tax > 1  
-                                  ~ "detected", 
-                                  .default = "not detected"),
-            n_samples
-            )  %>% 
-    distinct() %>% 
-  mutate(SampleContent2 = "Biofilm (e.p.)") %>% 
-  filter(!Species %in% unlist(gut_OTU$Species))
 
 
-
-
-sediment <- 
-    data_long %>% 
-    filter(SampleContent2 %in% c("Sediment")) %>% 
-    mutate(n_samples = n()) %>% 
-    ungroup() %>% 
-    mutate(samples = 
-             map(.x = samples, ~
-                   ungroup(.) %>% 
-                   distinct(Species, rel_abun_species) %>% 
-                   filter(rel_abun_species >= abun_limit) 
-             )) %>% 
-    unnest(samples) %>%
-    distinct() %>% 
-    group_by(Species) %>%
-    reframe(n_obs_tax = n(),
-            is_core = ifelse(n_obs_tax >= 0.8*n_samples, T, F), 
-            core_type = case_when(n_obs_tax >= 0.8*n_samples ~ "strict core",
-                                  n_obs_tax >= 0.5*n_samples ~ "general core",
-                                  n_obs_tax >= 0.2*n_samples & 0.2*n_samples > 1 ~ "loose core", 
-                                  n_obs_tax < 0.2*n_samples & n_obs_tax > 1  
-                                  ~ "detected", 
-                                  .default = "not detected"),
-            n_samples
-            )  %>% 
-    distinct() %>% 
-  mutate(SampleContent2 = "Sediment") %>% 
-  filter(!Species %in% unlist(gut_OTU$Species))
-
-
-best_core_group <- rbind(
-  biofilm_g, biofilm_ep, sediment
-) %>% 
-  mutate(
-    core_type_f = factor(core_type, 
-                         levels = c("strict core", "general core", "loose core", 
-                                    "detected", "not detected"
-                                    ))) %>% 
-    group_by(Species) %>% 
-    mutate(best_core_group = min(as.numeric(core_type_f))) %>% 
-  arrange(Species) %>% 
-  select(-n_obs_tax, -is_core, -n_samples, -core_type_f) %>% 
-  pivot_wider(names_from = SampleContent2, values_from = core_type, values_fill = "not detected") %>% 
-  mutate(best_core_group = recode(best_core_group, 
-                                  "1" = "strict core","2" = "general core", 
-                                  "3" = "loose core", "4" = "detected", 
-                                  "5" = "not detected"))
-
-  
-
-```
-
-
-```{r}
-
-core_species_all <- 
-  best_core_group %>% 
-  rename("core_type" = "best_core_group") %>% 
-  select(Species, core_type) %>% 
-  filter(core_type != "not detected")
 
 #Across samplecontents not merged sewer 
 # plot <- stacked_bar_source_nested_inc_detected(
@@ -2018,15 +2439,12 @@ core_species_all <-
 #         )
 
 
-
-
-
 plot_cum_abun <- stacked_bar_for_article(data_long_f = data_long, 
                         gut_species_vec = gut_OTU, 
                         group_by_vector = c(SampleContent3), 
                         facet_by = SampleContent3, 
                         sewer_core_species = core_species_all,
-                        type_select = 'Cummulative abundance'
+                        type_select = 'Cummulative abundance [%]'
 ) 
   
 plot_n_species <- stacked_bar_for_article(data_long_f = data_long, 
@@ -2034,20 +2452,834 @@ plot_n_species <- stacked_bar_for_article(data_long_f = data_long,
                         group_by_vector = c(SampleContent3), 
                         facet_by = SampleContent3, 
                         sewer_core_species = core_species_all,
-                        type_select = 'No. of species and unclassified ASVs (transformed to %)'
+                        type_select = 'No. of species (transformed) [%]'
 ) 
 
 plot <- plot_cum_abun + plot_n_species +
   plot_layout(nrow = 1, guides = "collect") & plot_annotation( tag_level = "A") & 
   theme(legend.position = "bottom", plot.tag = element_text(size = 30))
 
-plot_name = "F5_stacked_bar_best_core_0.01_AB"
+plot_name = "F4_stacked_bar_best_core_0.01_AB"
 ggsave(plot = plot, paste0(OutputPath, "plots/1_results/", plot_name, ".png"), 
        width = 14, height = 8)
 ggsave(plot = plot, paste0(OutputPath, "plots/1_results/", plot_name, ".pdf"), limitsize = F,  useDingbats=FALSE,  
        width = 14, height = 8)
 knitr::include_graphics(paste0(OutputPath, "plots/1_results/", plot_name, ".png"))
 
+
+
+
+```
+
+## Figure 5: Core groups with pattern 
+
+
+Abundance plot
+
+
+```{r}
+growth_and_group <- best_core_group %>% select(Species, best_core_group) %>% 
+  rbind(gut_OTU %>% 
+          mutate(best_core_group = "Gut bacteria, Disappearing") %>% 
+          select(-OTU) %>% distinct(Species, best_core_group)) %>% 
+  mutate(best_core_group = if_else(str_detect(best_core_group, " core"), "Sewer core", best_core_group)) %>% 
+  full_join(.,data_long %>% sample_n(1) %>% unnest(samples) %>% distinct(OTU, Species)) %>% 
+  mutate(best_core_group = if_else(is.na(best_core_group), "not detected", best_core_group)) %>% 
+  distinct(OTU, Species, best_core_group) %>% 
+  left_join(growth_df, by = c("OTU")) %>% 
+  mutate(growth_AS = if_else(growth_AS %in% c("surviving", "variable"), "surviving/varible", growth_AS))
+
+
+data <- 
+  data_long %>% #sample_n(10) %>% 
+   mutate(
+     SampleContent2 = SampleContent3,
+     samples = 
+           map(.x = samples, ~
+                 ungroup(.) %>% 
+                 left_join(growth_and_group, by = join_by(Species, OTU)) %>% 
+                 filter(rel_abun_ASV != 0) %>% 
+                 group_by(growth_AS, best_core_group) %>% 
+                 summarise(sum_growth = sum(rel_abun_ASV), 
+                           n_species = n_distinct(Species),
+                           .groups = "drop")
+           )) %>% 
+  unnest(samples) %>% #select(sum_growth,n_species, growth_AS, best_core_group, SampleID) %>% print(n=100)
+  group_by(SampleContent2, growth_AS, best_core_group#, Configuration
+           ) %>% 
+  summarise(mean_abun = mean(sum_growth), 
+            mean_n_species = mean(n_species), 
+            .groups = "drop") %>% 
+  mutate(growth_AS = factor(growth_AS#,
+                            #levels = growth_levels, ## changed
+                            #labels = growth_labels  ## Changed
+                            ),
+         #SampleContent2 = factor(SampleContent2, c("biofilm","biofilm_end_pressure", "sediment","sewage","IWW", "AS"), 
+         #                       labels = c("Biofilm (g)", "Biofilm (p)", "Sediment", "SWW","IWW", "AS")),
+  )
+
+
+ col = c("grey",'#ea9999','#ffe599',
+         #"lightblue",
+         '#b6d7a8')
+ 
+
+col <- c("grey", "#2E7052", "#6D9E77", "#A7C7A3")
+
+
+df <- data %>%
+  group_by(best_core_group, SampleContent2) %>%
+  mutate(
+    abun_best_core = sum(mean_abun), 
+    species_best_core = sum(mean_n_species), 
+    growth_AS = paste0(best_core_group, ";", growth_AS)
+  ) %>%
+  ungroup() %>% 
+  pivot_longer(cols = c(best_core_group, growth_AS), 
+               names_to = "names", values_to = "values") %>% 
+  mutate(
+    merge_abundances = if_else(names == "best_core_group", abun_best_core, mean_abun),
+    merge_species = if_else(names == "best_core_group", species_best_core, mean_n_species),
+    ) %>%
+  select(-mean_abun, -mean_n_species, -species_best_core, -abun_best_core) %>% distinct()
+
+
+ordered_values <- c(
+  "Gut bacteria, Disappearing;unknown", 
+  "Gut bacteria, Disappearing;disappearing", 
+  "Gut bacteria, Disappearing;surviving/varible", 
+  "Gut bacteria, Disappearing;growing", 
+   "Sewer core;unknown", 
+  "Sewer core;disappearing", 
+  "Sewer core;surviving/varible", 
+  "Sewer core;growing",
+  "detected;unknown", 
+  "detected;disappearing", 
+  "detected;surviving/varible", 
+  "detected;growing",
+  "not detected;unknown", 
+  "not detected;disappearing", 
+  "not detected;surviving/varible", 
+  "not detected;growing",
+  "Gut bacteria, Disappearing", 
+  "Sewer core", 
+  "detected", 
+  "not detected"
+)
+
+ordered_labels <- c(
+  "Gut bacteria, Disappearing;unknown", 
+  "Gut bacteria, Disappearing;disappearing", 
+  "Gut bacteria, Disappearing;surviving/varible", 
+  "Gut bacteria, Disappearing;growing", 
+   "Sewer core;unknown", 
+  "Sewer core;disappearing", 
+  "Sewer core;surviving/varible", 
+  "Sewer core;growing",
+  "detected;unknown", 
+  "detected;disappearing", 
+  "detected;surviving/varible", 
+  "detected;growing",
+  "not detected;unknown", 
+  "not detected;disappearing", 
+  "not detected;surviving/varible", 
+  "not detected;growing",
+  "Gut species (GS)", 
+  "Unified sewer core (USC)", 
+  "Detected in the sewer microbiome (DSM)", 
+  "Unknown source (US)"
+)
+
+# col2 = c(col, col, col, col, "#A7C7E7", "#D6604D", "grey90", "grey60")
+# col2 = c(col, col, col, col,"#5795D1", "#A7C7E7",  "grey90", "grey60")
+# col2 = c(col, col, col, col,"#1E3F66", "#B0D0E8",  "grey90","grey60")   #"#4D4D4D", "#A6A6A6", 
+col2 = c(col, col, col, col,"#1E3F66", "#76A5C9",  "grey90","grey60")   #"#4D4D4D", "#A6A6A6", 
+
+
+plot_df <- df  %>% 
+  mutate(
+    values = factor(values, levels = ordered_values, labels = ordered_labels), 
+    names = factor(names),
+    width = if_else(names == "best_core_group", 0.5, 1.5),
+    )  %>% 
+    left_join(data_long %>% distinct(SampleContent3, System) %>% rename("SampleContent2" = "SampleContent3")) %>% 
+  mutate(names=recode(names, 'best_core_group'='Source'),
+         names=recode(names, 'growth_AS'='Growth\nfate in AS')) %>% 
+  mutate(SampleContent2 = factor(SampleContent2, 
+                          levels = c("Biofilm (g.)",  "Sediment", "Biofilm (e.p.)", "SWW\n(g.)", "SWW\n(e.p.)", # "SWW", 
+                                     "IWW","AS"),
+                          labels = c("Biofilm\n(g.)",  "Sedi-\nment", "Biofilm\n(e.p.)","SWW\n(g.)", "SWW\n(e.p.)", # "SWW", 
+                                     "IWW","AS"))) 
+
+label_df_groups <- 
+  plot_df %>% 
+  filter(names == "Source") %>% 
+  mutate(values = fct_rev(values)) %>% 
+  arrange(SampleContent2,values) %>% 
+  group_by(SampleContent2, System) %>%
+   mutate(
+    mean_abun_sum = cumsum(merge_abundances)) 
+
+label_df_numbers <- 
+  plot_df %>% 
+  filter(names != "Source") %>% 
+  mutate(values = fct_rev(values)) %>% 
+  arrange(SampleContent2,values) %>% 
+  group_by(SampleContent2, System) %>%
+   mutate(
+    mean_abun_sum = cumsum(merge_abundances)) 
+
+line_data <- plot_df %>%
+  filter(names == "Source") %>% 
+  mutate(values = fct_rev(values)) %>% 
+  arrange(SampleContent2,values) %>% 
+  group_by(SampleContent2, System) %>% 
+  mutate(
+    values = factor(values, levels = c("Gut bacteria, Disappearing",  "Sewer core", "detected", "not detected")), 
+    values = factor(values, levels = c("not detected","detected", "Sewer core", "Gut bacteria, Disappearing")), 
+    ) %>% 
+  arrange(values) %>% 
+  reframe(yintercept = cumsum(merge_abundances), values) 
+
+plot <- plot_df %>%
+  ggplot(aes(x = names, y = merge_abundances, fill = values)) +
+  geom_bar(aes(width = width),
+    stat = "identity",
+    #color = "black",
+    position="stack"
+  ) +
+  ylab("Cummulative abundance [%]") +
+  scale_fill_manual(values = col2) +
+  scale_color_manual(values = c("black","grey90")) + 
+  #scale_y_continuous(expand = c(0,0)) +
+  #scale_x_discrete(expand = c(0,0)) +
+  facet_nested(~ System+SampleContent2) +
+  labs(x = "Category", 
+       fill = "Fill Color") +
+  geom_hline(data = line_data, aes(yintercept = yintercept), color = "black", linewidth  =0.5,
+               linetype = "solid") +  # Specific lines for each facet +
+  geom_hline(aes(yintercept = 0), color = "black", linewidth  =0.5,
+               linetype = "solid") +  # Specific lines for each facet +
+  geom_vline(aes(xintercept = 2.75), 
+               linetype = "solid", color = "black", linewidth  =0.5) +
+  geom_vline(aes(xintercept = 0.76), 
+               linetype = "solid", color = "black", linewidth  =0.5) +
+   geom_text(data = label_df_groups, aes(
+    y = mean_abun_sum - merge_abundances*0.95,
+    color = if_else(str_detect(values, "Gut") & str_detect(names, "Source"), "white", "black"),
+    label = case_when(merge_abundances > 30 ~ gsub("\\s*\\(.*?\\)", "", as.character(values)),
+                      merge_abundances > 5.5 ~ gsub(".*?\\((.*?)\\).*", "\\1", as.character(values)),
+                      .default = NA)), 
+    angle = 90, hjust = 0, size = 4) +
+  geom_label(data = label_df_numbers, aes(
+    y = mean_abun_sum - merge_abundances*0.5,
+    color = case_when(str_detect(values, "Gut") & names == 1 ~"white", 
+                      str_detect(values, "isappearing")~"white", 
+                      str_detect(values, "urviving")~"white", 
+                      .default = "black"),
+    label = if_else(merge_abundances > 4 | 
+                       (str_detect(values, "growing") & merge_abundances > 0.5), paste0(as.character(round(merge_abundances, 1)), "%"), NA)), angle = 0, hjust = 0.5, vjust = 0.5, label.padding = unit(0.1, "lines")) +
+  theme(legend.text = element_markdown(size = 16), 
+          panel.background = element_rect(fill = "white"),
+          axis.ticks.y = element_line(linewidth = unit(0.5, "lines"), color  = "black"),
+        axis.title.y = element_text(size = 16),
+          axis.title.x = element_blank(), 
+          text = element_text(color  = "black"),
+          legend.key = element_rect(linetype = 1), 
+          strip.text.x = element_text(angle = 0, size = 16, vjust = 0.5, hjust = 0, 
+                                    margin = margin(r = 2, b = 2, t= 2, l=2,unit = "pt")), 
+        strip.text.y = element_text(size = 1), 
+        legend.position = "bottom",
+        axis.text.y = element_text(size = 14, color  = "black"), 
+        axis.text.x =  element_text(size = 14, angle  = 90, color  = "black", vjust = 0.5), #element_blank(), #element_markdown(angle = 90, size = 12),
+        panel.spacing=unit(1,"mm"),
+        axis.ticks.x = element_line(linewidth = unit(0.5, "lines"), color  = "black"),        
+        legend.title = element_blank(), 
+        strip.background.x = element_rect(fill = "grey90"),
+        strip.background.y = element_blank()
+        ) +
+    scale_y_continuous(expand = c(0,0), breaks = c(0,25,50,75,100), labels = c("0%","25%","50%","75%","100%")) +
+    scale_x_discrete(expand = c(0,0)) 
+
+
+plot
+##
+```
+
+legend plots 
+
+```{r}
+
+first_legend_plot <- 
+  plot_df %>%
+  filter(names == "Source") %>% 
+  ggplot(., aes(x = merge_abundances, y = names, fill = values)) +
+  geom_bar(stat = "identity", show.legend = TRUE) +  # Show the second legend
+  scale_fill_manual(values = col2[17:21]) +
+  theme_void() +  # Remove axes
+  theme(legend.position = "bottom", legend.text = element_text(size = 16), legend.title = element_text(size = 16,  margin = margin(r = unit(15,"mm")))) +  # Position of the second legend
+  labs(fill = "Source")  # Label for the second legend
+
+second_legend_plot <- 
+  plot_df %>%
+  filter(names != "Source") %>% 
+  mutate(values = (str_extract(values, "(?<=;).*")),
+         values = factor(values, levels = c("growing", "surviving/varible", "disappearing", "unknown"),
+                         labels = c("Growing", "Surviving/Varible", "Disappearing", "Unknown"))) %>% 
+  ggplot(., aes(x = merge_abundances, y = names, fill = values)) +
+  geom_bar(stat = "identity", show.legend = TRUE) +  # Show the second legend
+  scale_fill_manual(values = rev(col2[1:4])) +
+  theme_void() +  # Remove axes
+  theme(legend.position = "bottom", legend.text = element_text(size = 16), legend.title = element_text(size = 16,  margin = margin(r = unit(15,"mm")))) +  # Position of the second legend
+  labs(fill = "Growth\nfate in AS")  # Label for the second legend
+
+x <- get_legend(second_legend_plot)
+second_legend <- as_ggplot(x)
+x <- get_legend(first_legend_plot)
+first_legend <- as_ggplot(x)
+
+
+```
+
+
+N species plot
+
+```{r}
+
+
+data <- 
+  data_long %>% #sample_n(10) %>% 
+   mutate(
+     SampleContent2 = SampleContent3,
+     samples = 
+           map(.x = samples, ~
+                 ungroup(.) %>% 
+                 left_join(growth_and_group, by = join_by(Species, OTU)) %>% 
+                 filter(rel_abun_ASV != 0) %>% 
+                 group_by(growth_AS, best_core_group) %>% 
+                 summarise(sum_growth = sum(rel_abun_ASV), 
+                           n_species = n_distinct(Species),
+                           .groups = "drop")
+           )) %>% 
+  unnest(samples) %>% #select(sum_growth,n_species, growth_AS, best_core_group, SampleID) %>% print(n=100)
+  group_by(SampleContent2, growth_AS, best_core_group#, Configuration
+           ) %>% 
+  summarise(mean_abun = mean(sum_growth), 
+            mean_n_species = mean(n_species), 
+            .groups = "drop") %>% 
+  group_by(SampleContent2) %>% 
+  mutate(sum_mean_n_species = sum(mean_n_species), 
+         p_mean_n_species = mean_n_species / sum_mean_n_species *100) %>% 
+  ungroup()
+  
+
+
+ # col = c("grey",'#ea9999','#ffe599',
+ #         #"lightblue",
+ #         '#b6d7a8')
+
+df <- data %>%
+  group_by(best_core_group, SampleContent2) %>%
+  mutate(
+    species_best_core = sum(mean_n_species), 
+    p_species_best_core = sum(p_mean_n_species), 
+    growth_AS = paste0(best_core_group, ";", growth_AS)
+  ) %>%
+  ungroup() %>% 
+  pivot_longer(cols = c(best_core_group, growth_AS), 
+               names_to = "names", values_to = "values") %>% 
+  mutate(
+    merge_p_species = if_else(names == "best_core_group", p_species_best_core, p_mean_n_species),
+    merge_species = if_else(names == "best_core_group", species_best_core, mean_n_species),
+    ) %>%
+  select(-mean_abun, -mean_n_species, -species_best_core,
+         -sum_mean_n_species,-p_mean_n_species, -p_species_best_core
+         ) %>% distinct()
+
+# blue_gradient <- c("#A7C7E7", "#7FAEDC", , "#2F7CC6")
+# col2 = c(col, col, col, col, "#A7C7E7", "#D6604D", "grey90", "grey60")
+# col2 = c(col, col, col, col,"#5795D1", "#A7C7E7",  "grey90", "grey60")
+
+
+plot_df <- df  %>% 
+  mutate(
+    values = factor(values, levels = ordered_values, labels = ordered_labels), 
+    names = factor(names),
+    width = if_else(names == "best_core_group", 0.5, 1.5),
+    )  %>% 
+    left_join(data_long %>% distinct(SampleContent3, System) %>% rename("SampleContent2" = "SampleContent3")) %>% 
+  mutate(names=recode(names, 'best_core_group'='Source'),
+         names=recode(names, 'growth_AS'='Growth\nfate in AS')) %>% 
+  mutate(SampleContent2 = factor(SampleContent2, 
+                          levels = c("Biofilm (g.)",  "Sediment", "Biofilm (e.p.)", "SWW\n(g.)", "SWW\n(e.p.)", # "SWW", 
+                                     "IWW","AS"),
+                          labels = c("Biofilm\n(g.)",  "Sedi-\nment", "Biofilm\n(e.p.)","SWW\n(g.)", "SWW\n(e.p.)", # "SWW", 
+                                     "IWW","AS"))) 
+
+label_df_groups <- 
+  plot_df %>% 
+  filter(names == "Source") %>% 
+  mutate(values = fct_rev(values)) %>% 
+  arrange(SampleContent2,values) %>% 
+  group_by(SampleContent2, System) %>%
+   mutate(
+    mean_abun_sum = cumsum(merge_p_species)) 
+
+label_df_numbers <- 
+  plot_df %>% 
+  filter(names != "Source") %>% 
+  mutate(values = fct_rev(values)) %>% 
+  arrange(SampleContent2,values) %>% 
+  group_by(SampleContent2, System) %>%
+   mutate(
+    mean_abun_sum = cumsum(merge_p_species)) 
+
+line_data <- plot_df %>%
+  filter(names == "Source") %>% 
+  mutate(values = fct_rev(values)) %>% 
+  arrange(SampleContent2,values) %>% 
+  group_by(SampleContent2, System) %>% 
+  mutate(
+    values = factor(values, levels = c("Gut bacteria, Disappearing",  "Sewer core", "detected", "not detected")), 
+    values = factor(values, levels = c("not detected","detected", "Sewer core", "Gut bacteria, Disappearing")), 
+    ) %>% 
+  arrange(values) %>% 
+  reframe(yintercept = cumsum(merge_p_species), values) 
+
+plot2 <- plot_df %>% 
+  ggplot(aes(x = names, y = merge_p_species, fill = values)) +
+  geom_bar(aes(width = width),
+    stat = "identity",
+    #color = "black",
+    position="stack"
+  ) +
+  scale_fill_manual(values = col2) +
+    scale_color_manual(values = c("black","grey90")) + 
+  #scale_y_continuous(expand = c(0,0)) +
+  #scale_x_discrete(expand = c(0,0)) +
+  facet_nested(~ System+SampleContent2) +
+  labs(x = "Category", y = "No. of species (transformed) [%]", fill = "Fill Color") +
+  geom_hline(data = line_data, aes(yintercept = yintercept), color = "black", linewidth  =0.5,
+               linetype = "solid") +  # Specific lines for each facet +
+  geom_hline(aes(yintercept = 0), color = "black", linewidth  =0.5,
+               linetype = "solid") +  # Specific lines for each facet +
+  geom_vline(aes(xintercept = 2.75), 
+               linetype = "solid", color = "black", linewidth  =0.5) +
+  geom_vline(aes(xintercept = 0.76), 
+               linetype = "solid", color = "black", linewidth  =0.5) +
+   geom_text(data = label_df_groups, aes(
+    y = mean_abun_sum - merge_p_species*0.95,
+    color = if_else((str_detect(values, "Gut") & str_detect(names, "Source")), "white", "black"),
+    label = case_when(merge_p_species > 25 & !str_detect(values, "sewer")~ gsub("\\s*\\(.*?\\)", "", as.character(values)),
+                      merge_p_species > 43 & str_detect(values, "sewer") ~ gsub("\\s*\\(.*?\\)", "", as.character(values)),
+                      merge_p_species > 5 ~ gsub(".*?\\((.*?)\\).*", "\\1", as.character(values)),
+                      .default = NA)), 
+    angle = 90, hjust = 0) +
+  geom_label(data = label_df_numbers, aes(
+    y = mean_abun_sum - merge_p_species*0.5,
+    color = case_when(str_detect(values, "Gut") & names == 1 ~ "white", 
+                      str_detect(values, "Gut bacteria, Disappearing;unknown")~"black",  
+                      str_detect(values, "isappearing")~"white", 
+                      str_detect(values, "urviving")~"white", 
+                      .default = "black"),
+    label = if_else(merge_p_species > 2.0 | 
+                       (str_detect(values, "growing") & merge_p_species > 2), paste0(as.character(round(merge_species, 0))), NA)), 
+    angle = 0, hjust = 0.5, vjust = 0.5, label.padding = unit(0.1, "lines"), size = 3.5) +
+   theme(legend.text = element_markdown(size = 16), 
+          panel.background = element_rect(fill = "white"),
+          axis.ticks.y = element_line(linewidth = unit(0.5, "lines"), color  = "black"),
+          #axis.title.y = element_blank(), #element_text(size = 16), 
+          axis.title.x = element_blank(), 
+          text = element_text(color  = "black"),
+          legend.key = element_rect(linetype = 1), 
+          strip.text.x = element_text(angle = 0, size = 16, vjust = 0.5, hjust = 0, 
+                                    margin = margin(r = 2, b = 2, t= 2, l=2,unit = "pt")), 
+        strip.text.y = element_text(size = 1), 
+        legend.position = "bottom",
+        axis.text.y = element_text(size = 14, color  = "black"), 
+        axis.title.y = element_text(size = 16),
+        axis.text.x =  element_text(size = 14, angle  = 90, color  = "black", vjust = 0.5), #element_blank(), #element_markdown(angle = 90, size = 12),
+        panel.spacing=unit(1,"mm"),
+        axis.ticks.x = element_line(linewidth = unit(0.5, "lines"), color  = "black"),        
+        legend.title = element_blank(), 
+        strip.background.x = element_rect(fill = "grey90"),
+        strip.background.y = element_blank()
+        ) +
+    scale_y_continuous(expand = c(0.0,0), breaks = c(0,25,50,75,100), labels = c("0%","25%","50%","75%","100%")) +
+    scale_x_discrete(expand = c(0,0)) 
+  
+  
+  # theme(legend.position = "right", 
+  #       axis.text.x = element_text(size = 12, angle  = 90, vjust = 0.5, hjust = 1,color = "black"), 
+  #       axis.text.y = element_markdown(size = 12, color = "black"),
+  #       legend.title = element_text(vjust = 1, size = 16),
+  #       strip.text.y = element_blank(),
+  #       panel.grid = element_blank(),
+  #       panel.spacing=unit(1,"mm"),
+  #       #axis.ticks.x = element_blank(), 
+  #       strip.text.x = element_text(size = 16),
+  #       axis.title = element_blank(), 
+  #       strip.background = element_rect(fill = "grey90"),
+  #       #strip.text.y = element_text(angle = 0, size = 16),
+  #       #plot.background = element_rect(fill = "grey70")
+  #       ) 
+plot2
+##
+```
+
+
+Make merged plot
+
+```{r}
+
+plot_legend <- first_legend + second_legend + plot_layout(nrow = 2) 
+plot_name = "F5_stacked_bar_best_core_LEGEND"
+ggsave(plot = plot_legend, paste0(OutputPath, "plots/1_results/", plot_name, ".png"), 
+       width = 14, height = 1.5)
+ggsave(plot = plot_legend, paste0(OutputPath, "plots/1_results/", plot_name, ".pdf"), limitsize = F,  useDingbats=FALSE,  
+       width = 14, height = 1.5)
+knitr::include_graphics(paste0(OutputPath, "plots/1_results/", plot_name, ".png"))
+
+
+
+# Use annotation 
+plot_merged <- plot + plot2 + plot_annotation(tag_levels = "A") &
+theme(legend.position = "none", plot.tag = element_text(size = 30)) 
+
+plot_name = "F5_stacked_bar_best_core"
+ggsave(plot = plot_merged, paste0(OutputPath, "plots/1_results/", plot_name, ".png"), 
+       width = 14.5, height = 7.8)
+ggsave(plot = plot_merged, paste0(OutputPath, "plots/1_results/", plot_name, ".pdf"), limitsize = F,  useDingbats=FALSE,  
+       width = 14, height = 7)
+knitr::include_graphics(paste0(OutputPath, "plots/1_results/", plot_name, ".png"))
+
+
+
+plot_merged + plot_legend + plot_layout(nrow = 2) 
+
+
+
+
+###################
+### MErged pdf ##########
+
+# Install packages if not already installed
+#install.packages("magick")
+install.packages("pdftools")
+
+# Load libraries
+library(magick)
+library(pdftools)
+
+
+
+# Read both pages from the PDF with very high resolution
+images <- image_read_pdf("\Users\HD95LP\OneDrive - Aalborg Universitet\AAU\Publications\Sewer_Microbiome/Binder1.pdf", density = 2400)
+
+images <- image_read_pdf("C:\\Users\\HD95LP\\OneDrive - Aalborg Universitet\\AAU\\Publications\\Sewer_Microbiome\\Binder1.pdf", density = 2400)
+
+
+# Combine the two pages vertically
+combined <- image_append(images, stack = TRUE)
+
+# Save as a new single-page PDF
+image_write(combined, path = "C:/Users/HD95LP/OneDrive - Aalborg Universitet/AAU/Publications/Sewer_Microbiome/Binder1_combined.pdf", format = "pdf")
+
+
+
+
+# Read both pages from a single 2-page PDF
+# OR replace with two separate files like: image_read_pdf("figure.pdf")
+images <- image_read_pdf("C:\Users\HD95LP\OneDrive - Aalborg Universitet\AAU\Publications\Sewer_Microbiome\Binder1.pdf", density = 2400)
+
+# Combine the two pages vertically (figure on top, legend below)
+combined <- image_append(images, stack = TRUE)
+
+# Write to a new single-page PDF
+image_write(combined, path = "combined_page.pdf", format = "pdf")
+
+
+
+```
+
+
+
+## Growth groups per core group 
+
+### Subplots {.tabset}
+
+```{r}
+
+all <- growing_dying_bar_plot(
+  data_long %>% 
+    filter(!SampleSite %in% c("AalborgWest_before")) %>% 
+    mutate(
+        samples = map(samples, ~ ungroup(.) %>% 
+        select(OTU, rel_abun_ASV, Species, rel_abun_species)
+          )),
+  include = c("Biofilm (g.)", "Sediment","Biofilm (e.p.)", "SWW", "IWW", "AS"),
+  # gut_bacteria_as_group = F, 
+  abun_limit = 4,
+  #gut_df = gut_OTU
+  ) +
+   labs(title = "All") +
+   theme(plot.title = element_text(size = 18))
+
+
+plot_name = "growth_of_all"
+# ggsave(plot = all, paste0(OutputPath, "plots/3_presentations/", plot_name, ".png"), 
+#        width = 10, height = 5)
+# knitr::include_graphics(paste0(OutputPath, "plots/3_presentations/", plot_name, ".png"))
+
+
+```
+
+#### Strict core 
+
+```{r}
+
+strict <- growing_dying_bar_plot(
+  data_long %>% 
+    filter(
+      !SampleSite %in% c("AalborgWest_before")) %>% 
+      mutate(
+        #SampleContent2 = SampleContent4,
+        samples = map(samples, ~ ungroup(.) %>% 
+        select(OTU, rel_abun_ASV, Species, rel_abun_species) %>% 
+        filter(Species %in% unlist(core_species_all %>% 
+                                     filter(core_type == "strict core")))
+                         )), 
+                       include = c("Biofilm (g.)", "Sediment","Biofilm (e.p.)",  "SWW", "IWW", "AS"), 
+                       #gut_bacteria_as_group = F, 
+  abun_limit = 4#,
+                       #gut_df = gut_OTU
+  ) +
+   labs(title = "Strict unified core") +
+   theme(plot.title = element_text(size = 18))
+
+
+plot_name = "growth_of_the_strict_core"
+ggsave(plot = strict, paste0(OutputPath, "plots/3_presentations/", plot_name, ".png"), 
+       width = 10, height = 5)
+knitr::include_graphics(paste0(OutputPath, "plots/3_presentations/", plot_name, ".png"))
+
+
+```
+
+#### General core 
+
+```{r}
+
+general <- growing_dying_bar_plot(
+  data_long %>% 
+    filter(
+      !SampleSite %in% c("AalborgWest_before")) %>% 
+      #filter(SampleContent2 %in% c("IWW", "AS")
+      mutate(
+        #SampleContent2 = SampleContent4,
+        samples = map(samples, ~ ungroup(.) %>% 
+        select(OTU, rel_abun_ASV, Species, rel_abun_species) %>% 
+        filter(Species %in% unlist(core_species_all %>% 
+                                     filter(core_type == "general core")))
+                         )), 
+                       include = c("Biofilm (g.)", "Sediment",   "Biofilm (e.p.)","SWW", "IWW", "AS"), 
+                       #gut_bacteria_as_group = F, 
+  abun_limit = 4,
+                       #gut_df = gut_OTU
+  ) +
+   labs(title = "General unified  core ") +
+     theme(plot.title = element_text(size = 18))
+
+
+plot_name = "growth_of_the_general_core"
+ggsave(plot = general, paste0(OutputPath, "plots/3_presentations/", plot_name, ".png"), 
+       width = 10, height = 5)
+knitr::include_graphics(paste0(OutputPath, "plots/3_presentations/", plot_name, ".png"))
+
+
+```
+
+
+#### Loose  core 
+
+```{r}
+
+loose <- growing_dying_bar_plot(
+  data_long %>% 
+    filter(
+      !SampleSite %in% c("AalborgWest_before")) %>% 
+      #filter(SampleContent2 %in% c("IWW", "AS")
+      mutate(
+        #SampleContent2 = SampleContent4,
+        samples = map(samples, ~ ungroup(.) %>% 
+        select(OTU, rel_abun_ASV, Species, rel_abun_species) %>% 
+        filter(Species %in% unlist(core_species_all %>% 
+                                     filter(core_type == "loose core")))
+                         )), 
+                       include = c("Biofilm (g.)",  "Sediment", "Biofilm (e.p.)", "SWW", "IWW", "AS"), 
+                       #gut_bacteria_as_group = F, 
+  abun_limit = 4,
+                       #gut_df = gut_OTU
+  ) +
+  labs(title = "Loose unified core ") +
+ theme(plot.title = element_text(size = 18))
+
+
+
+plot_name = "growth_of_the_loose_core"
+ggsave(plot = loose, paste0(OutputPath, "plots/3_presentations/", plot_name, ".png"), 
+       width = 10, height = 5)
+knitr::include_graphics(paste0(OutputPath, "plots/3_presentations/", plot_name, ".png"))
+
+
+```
+
+
+#### Detected  
+
+```{r}
+
+detected <- growing_dying_bar_plot(
+  data_long %>% 
+    filter(
+      !SampleSite %in% c("AalborgWest_before")) %>% 
+      #filter(SampleContent2 %in% c("IWW", "AS")
+      mutate(
+        #SampleContent2 = SampleContent4,
+        samples = map(samples, ~ ungroup(.) %>% 
+        select(OTU, rel_abun_ASV, Species, rel_abun_species) %>% 
+        filter(Species %in% unlist(core_species_all %>% 
+                                     filter(core_type == "detected")))
+                         )), 
+                       include = c("Biofilm (g.)", "Sediment",  "Biofilm (e.p.)", "SWW", "IWW", "AS"), 
+                       #gut_bacteria_as_group = F, 
+  abun_limit = 4,
+                       #gut_df = gut_OTU
+  ) +
+    labs(title = "Detected in the sewer microbiome") +
+    theme(plot.title = element_text(size = 18))
+
+  
+
+
+
+plot_name = "growth_of_the_detected_core"
+ggsave(plot = detected, paste0(OutputPath, "plots/3_presentations/", plot_name, ".png"), 
+       width = 12, height = 7)
+knitr::include_graphics(paste0(OutputPath, "plots/3_presentations/", plot_name, ".png"))
+
+
+```
+
+#### unknown  
+
+```{r}
+
+unknown <- growing_dying_bar_plot(
+  data_long %>% 
+    filter(
+      !SampleSite %in% c("AalborgWest_before")) %>% 
+      #filter(SampleContent2 %in% c("IWW", "AS")
+      mutate(
+        #SampleContent2 = SampleContent4,
+        samples = map(samples, ~ ungroup(.) %>% 
+        select(OTU, rel_abun_ASV, Species, rel_abun_species) %>% 
+        filter(!Species %in% unlist(core_species_all %>% select(Species))
+                                    # %>% 
+                                    #  filter(core_type == "Unknown"))
+               )
+                         )), 
+                       include = c("Biofilm (g.)", "Sediment","Biofilm (e.p.)",   "SWW", "IWW", "AS"), 
+                       #gut_bacteria_as_group = T, 
+                       #gut_df = gut_OTU, 
+  abun_limit = 4) + 
+  theme(plot.title = element_text(size = 18), 
+        legend.text = element_text(size = 16),
+        legend.title = element_text(size = 16)) +
+  guides(fill = guide_legend(title = "Growth in AS")) +
+  labs(title = "Unknown source")
+
+
+plot_name = "growth_of_the_unknown_core"
+ggsave(plot = unknown, paste0(OutputPath, "plots/growth_plots/", plot_name, ".png"), 
+       width = 12, height = 7)
+knitr::include_graphics(paste0(OutputPath, "plots/growth_plots/", plot_name, ".png"))
+
+
+```
+
+
+#### gut  
+
+```{r}
+
+gut <- growing_dying_bar_plot(
+  data_long %>% 
+    filter(
+      !SampleSite %in% c("AalborgWest_before")) %>% 
+      #filter(SampleContent2 %in% c("IWW", "AS")
+      mutate(
+        #SampleContent2 = SampleContent4,
+        samples = map(samples, ~ ungroup(.) %>% 
+        select(OTU, rel_abun_ASV, Species, rel_abun_species) %>% 
+        filter(Species %in% unlist(gut_OTU$Species)
+                                    # %>% 
+                                    #  filter(core_type == "Unknown"))
+               )
+                         )), 
+                       include = c("Biofilm (g.)", "Sediment", "Biofilm (e.p.)",   "SWW", "IWW", "AS"), 
+                       #gut_bacteria_as_group = T, 
+                       #gut_df = gut_OTU, 
+  abun_limit = 4) + 
+  theme(plot.title = element_text(size = 18)) +
+  labs(title = "Gut species")
+
+
+plot_name = "growth_of_the_unknown_core"
+ggsave(plot = unknown, paste0(OutputPath, "plots/growth_plots/", plot_name, ".png"), 
+       width = 12, height = 7)
+knitr::include_graphics(paste0(OutputPath, "plots/growth_plots/", plot_name, ".png"))
+
+
+```
+
+
+
+
+### S10 Merge growth plots 
+
+```{r}
+
+
+legend <- get_legend(
+  unknown + theme(legend.position = "right", text = element_text(size = 22)) + 
+    labs(title = "Growth in AS")
+)
+
+
+# Adjusting the layout to center the first plot with specific width proportions
+first_row <- (plot_spacer() | all + theme(legend.position = "none")  | legend) + 
+  plot_layout(widths = c(0.1, 0.6, 0.2), heights = 2) # Set specific widths for the first row
+
+# Adjusting the layout using patchwork
+combined_plot <- 
+  (first_row) / # First row: full-width plot
+  (strict + theme(legend.position = "none") |  
+     general + theme(axis.title.y = element_blank(), legend.position = "none")) / # Second row: two plots
+  ( loose + theme(legend.position = "none") | 
+      detected + theme(axis.title.y = element_blank(), legend.position = "none")) / # Third row: one plot, one empty space
+  ( unknown + theme(legend.position = "none") | 
+      gut + theme(axis.title.y = element_blank(), legend.position = "none"))  # Third row: one plot, one empty space
+  
+
+combined_plot <- combined_plot + plot_layout(heights = c(1.5, 1, 1, 1))
+
+combined_plot
+plot_name = "S10_Growth_fate_super_combined"
+ggsave(plot = combined_plot, paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".png"), 
+       width = 14, height = 17)
+ggsave(plot = combined_plot, paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".pdf"), limitsize = F,  useDingbats=FALSE,  
+       width = 16, height = 17)
 
 
 
@@ -2077,13 +3309,14 @@ strict <- growing_dying_bar_plot(
                        include = c("Biofilm (g.)", "Biofilm (e.p.)", "Sediment", "Wastewater", "AS"), 
                        gut_bacteria_as_group = F, abun_limit = 3.5,
                        gut_df = gut_OTU) +
-   labs(title = "Strict  core ")
+   labs(title = "Strict  core ") +
+   theme(plot.title = element_text(size = 18))
 
 
 plot_name = "growth_of_the_strict_core"
-ggsave(plot = strict, paste0(OutputPath, "plots/growth_plots/", plot_name, ".png"), 
-       width = 12, height = 7)
-knitr::include_graphics(paste0(OutputPath, "plots/growth_plots/", plot_name, ".png"))
+ggsave(plot = strict, paste0(OutputPath, "plots/3_presentations/", plot_name, ".png"), 
+       width = 10, height = 5)
+knitr::include_graphics(paste0(OutputPath, "plots/3_presentations/", plot_name, ".png"))
 
 
 ```
@@ -2107,13 +3340,14 @@ general <- growing_dying_bar_plot(
                        include = c("Biofilm (g.)", "Biofilm (e.p.)", "Sediment", "Wastewater", "AS"), 
                        gut_bacteria_as_group = F, abun_limit = 2,
                        gut_df = gut_OTU) +
-   labs(title = "General  core ")
+   labs(title = "General  core ") +
+     theme(plot.title = element_text(size = 18))
 
 
 plot_name = "growth_of_the_general_core"
-ggsave(plot = general, paste0(OutputPath, "plots/growth_plots/", plot_name, ".png"), 
-       width = 12, height = 7)
-knitr::include_graphics(paste0(OutputPath, "plots/growth_plots/", plot_name, ".png"))
+ggsave(plot = general, paste0(OutputPath, "plots/3_presentations/", plot_name, ".png"), 
+       width = 10, height = 5)
+knitr::include_graphics(paste0(OutputPath, "plots/3_presentations/", plot_name, ".png"))
 
 
 ```
@@ -2138,13 +3372,15 @@ loose <- growing_dying_bar_plot(
                        include = c("Biofilm (g.)", "Biofilm (e.p.)", "Sediment", "Wastewater", "AS"), 
                        gut_bacteria_as_group = F, abun_limit = 3,
                        gut_df = gut_OTU) +
-  labs(title = "Loose  core ")
+  labs(title = "Loose  core ") +
+ theme(plot.title = element_text(size = 18))
+
 
 
 plot_name = "growth_of_the_loose_core"
-ggsave(plot = loose, paste0(OutputPath, "plots/growth_plots/", plot_name, ".png"), 
-       width = 12, height = 7)
-knitr::include_graphics(paste0(OutputPath, "plots/growth_plots/", plot_name, ".png"))
+ggsave(plot = loose, paste0(OutputPath, "plots/3_presentations/", plot_name, ".png"), 
+       width = 10, height = 5)
+knitr::include_graphics(paste0(OutputPath, "plots/3_presentations/", plot_name, ".png"))
 
 
 ```
@@ -2169,14 +3405,17 @@ detected <- growing_dying_bar_plot(
                        include = c("Biofilm (g.)", "Biofilm (e.p.)", "Sediment", "Wastewater", "AS"), 
                        gut_bacteria_as_group = F, abun_limit = 0.5,
                        gut_df = gut_OTU) +
-    labs(title = "Detected")
+    labs(title = "Detected") +
+    theme(plot.title = element_text(size = 18))
+
+  
 
 
 
 plot_name = "growth_of_the_detected_core"
-ggsave(plot = detected, paste0(OutputPath, "plots/growth_plots/", plot_name, ".png"), 
+ggsave(plot = detected, paste0(OutputPath, "plots/3_presentations/", plot_name, ".png"), 
        width = 12, height = 7)
-knitr::include_graphics(paste0(OutputPath, "plots/growth_plots/", plot_name, ".png"))
+knitr::include_graphics(paste0(OutputPath, "plots/3_presentations/", plot_name, ".png"))
 
 
 ```
@@ -2242,15 +3481,183 @@ knitr::include_graphics(paste0(OutputPath, "plots/1_results/", plot_name, ".png"
 ```
 
 
+## Presentation
+
+## IWW and AS - not gut
+
+```{r}
+
+IWW_AS_no_gut <- growing_dying_bar_plot(
+  data_long %>% 
+    filter(
+      !SampleSite %in% c("AalborgWest_before")) %>% 
+      mutate(
+        SampleContent2 = SampleContent2,
+        samples = map(samples, ~ ungroup(.) %>% 
+        select(OTU, rel_abun_ASV, Species, rel_abun_species) #%>% 
+        # filter(Species %in% unlist(core_species_all %>% 
+        #                              filter(core_type == "strict core")))
+                         )), 
+                       include = c("IWW", "AS"), 
+                       gut_bacteria_as_group = F, abun_limit = 3.5,
+                       gut_df = gut_OTU) +
+    theme(legend.position = "none")
+
+# +
+#    labs(title = "Strict  core ")
+
+
+plot_name = "IWW_AS_no_gut"
+ggsave(plot = IWW_AS_no_gut, paste0(OutputPath, "plots/3_presentations/", plot_name, ".png"), 
+       width = 4, height = 6)
+knitr::include_graphics(paste0(OutputPath, "plots/3_presentations/", plot_name, ".png"))
+
+
+```
+
+
+## IWW and AS - with gut
+
+```{r}
+
+IWW_AS_with_gut <- growing_dying_bar_plot(
+  data_long %>% 
+    filter(
+      !SampleSite %in% c("AalborgWest_before")) %>% 
+      mutate(
+        SampleContent2 = SampleContent2,
+        samples = map(samples, ~ ungroup(.) %>% 
+        select(OTU, rel_abun_ASV, Species, rel_abun_species) #%>% 
+        # filter(Species %in% unlist(core_species_all %>% 
+        #                              filter(core_type == "strict core")))
+                         )), 
+                       include = c("IWW", "AS"), 
+                       gut_bacteria_as_group = T, abun_limit = 3.5,
+                       gut_df = gut_OTU) 
+# +
+#    labs(title = "Strict  core ")
+
+
+plot_name = "IWW_AS_with_gut"
+ggsave(plot = IWW_AS_with_gut, paste0(OutputPath, "plots/3_presentations/", plot_name, ".png"), 
+       width = 6, height = 6)
+knitr::include_graphics(paste0(OutputPath, "plots/3_presentations/", plot_name, ".png"))
+
+
+```
+
+
+## IWW and AS and SWW - with gut
+
+```{r}
+
+IWW_AS_with_gut <- growing_dying_bar_plot(
+  data_long %>% 
+    filter(
+      !SampleSite %in% c("AalborgWest_before")) %>% 
+      mutate(
+        SampleContent2 = SampleContent2,
+        samples = map(samples, ~ ungroup(.) %>% 
+        select(OTU, rel_abun_ASV, Species, rel_abun_species) #%>% 
+        # filter(Species %in% unlist(core_species_all %>% 
+        #                              filter(core_type == "strict core")))
+                         )), 
+                       include = c("SWW","IWW", "AS"), 
+                       gut_bacteria_as_group = T, abun_limit = 3.5,
+                       gut_df = gut_OTU) 
+# +
+#    labs(title = "Strict  core ")
+
+
+plot_name = "IWW_AS_with_gut"
+ggsave(plot = IWW_AS_with_gut, paste0(OutputPath, "plots/3_presentations/", plot_name, ".png"), 
+       width = 8, height = 6)
+knitr::include_graphics(paste0(OutputPath, "plots/3_presentations/", plot_name, ".png"))
+
+
+```
+
+
+## All - One merged core group
+
+```{r}
+
+IWW_AS_with_gut <- growing_dying_bar_plot(
+  data_long %>% 
+      mutate(
+        SampleContent2 = SampleContent2,
+        samples = map(samples, ~ ungroup(.) %>% 
+        select(OTU, rel_abun_ASV, Species, rel_abun_species) %>% 
+        filter(Species %in% unlist(core_species_all %>% 
+                                      filter(core_type %in%  c("strict core", "general core", "loose core")))
+               )
+                         )), 
+                       include = c("Biofilm (g.)", "Sediment", "Biofilm (e.p.)","SWW","IWW", "AS"),
+                       gut_bacteria_as_group = F, abun_limit = 3.5,
+                       gut_df = gut_OTU, make_label = F)
+# + 
+#   theme(legend.position = "none")
+# +
+#    labs(title = "Strict  core ")
+
+
+plot_name = "merged_core"
+ggsave(plot = IWW_AS_with_gut, paste0(OutputPath, "plots/3_presentations/", plot_name, ".png"), 
+       width = 10, height = 5)
+knitr::include_graphics(paste0(OutputPath, "plots/3_presentations/", plot_name, ".png"))
+
+
+```
+
+
+## All - One merged core group
+
+```{r}
+
+IWW_AS_with_gut <- growing_dying_bar_plot(
+  data_long %>% 
+      mutate(
+        SampleContent2 = SampleContent2,
+        samples = map(samples, ~ ungroup(.) %>% 
+                        select(OTU, rel_abun_ASV, Species, rel_abun_species) %>% 
+                        filter(Species %in% unlist(core_species_all %>% 
+                                                     filter(core_type %in%  c("strict core",
+                                                                              "general core", "loose core"))))
+                         ),
+        
+        ), 
+                       include = c("Biofilm (g.)", "Sediment", "Biofilm (e.p.)","SWW","IWW", "AS"),
+                       gut_bacteria_as_group = F, abun_limit = 3.5,
+                       gut_df = gut_OTU, make_label = F)
+# + 
+#   theme(legend.position = "none")
+# +
+#    labs(title = "Strict  core ")
+
+
+plot_name = "merged_core"
+ggsave(plot = IWW_AS_with_gut, paste0(OutputPath, "plots/3_presentations/", plot_name, ".png"), 
+       width = 10, height = 5)
+knitr::include_graphics(paste0(OutputPath, "plots/3_presentations/", plot_name, ".png"))
+
+
+```
+
+
+
+
+
 # Section: Each sewer environment hosts a specialized community
 
 ## Figure 7: Core sewer genera heatmap with metabolic potential
 
 ```{r}
 
-# Create the bins and corresponding colors
+
 bins <- c(0,0.0000000000000000001,0.01, 0.1, 1, 5, 10, Inf)
 colors <- c("grey90","white","#FFF5EB", "#F5C9B0", "#EC9E75", "#E2733B", "#D94801")
+fill_legend_label = c("0","0-0.01", "0.01-0.1", "0.1-1", "1-5", "5-10", ">10")
+
 
 ## Other bins (remember to change labels manually)
 #bins <- c(0, 0.01, 0.05,0.1, 1, 5, Inf)
@@ -2322,13 +3729,13 @@ plot_df <- data_long %>% #sample_n(20) %>%
                    )) %>% 
     unnest(samples) %>%
   mutate(SampleSite = SampleContent2) %>%  #### MERGE SAMPLESITES
-  group_by(SampleContent2, SampleSite, lab, SampleID) %>% 
+  group_by(SampleContent2, SampleContent3, SampleSite, lab, SampleID) %>% 
   reframe(
     sum = sum(rel_abun_genus), 
     n_genus = n(),
     Genus = if_else(lab == "Remaining", "", Genus)
     ) %>% 
-  group_by(SampleContent2, SampleSite, lab, Genus) %>% 
+  group_by(SampleContent2, SampleContent3,SampleSite, lab, Genus) %>% 
   summarise(
       mean = mean(sum), 
       mean_n_genus = mean(n_genus),
@@ -2373,18 +3780,9 @@ metabolic <- MIDAS_metabolic_df %>%
   complete(Genus, meta, 
            fill = list(value = "unknown")) %>% 
   filter(!is.na(meta)) %>% 
-  distinct() 
+  distinct() %>% 
+  mutate(value = if_else(str_detect(Genus, "g__Azonexus") & meta == "Sulfate red.", "negative", value))
 
-
-# Make Midas functional groups
-# guild <- df_functional%>% 
-#   right_join(.,top_each_samplecontent %>% select(Genus), relationship = "many-to-many") %>% 
-#   distinct() %>% 
-#   mutate(value_func = if_else(!is.na(functional_group), "positive", "negative")) %>% 
-#   complete(Genus,functional_group, 
-#            fill = list(value_func = "unknown")) %>% 
-#   #filter(!is.na(meta)) %>% 
-#   distinct() 
 
 new_plot_df <- rbind(new_rows, plot_df) %>% #print(n = 100) %>% 
   full_join(core_groups, by = join_by(Genus)) %>%
@@ -2409,29 +3807,37 @@ new_plot_df <- rbind(new_rows, plot_df) %>% #print(n = 100) %>%
                      labels = c("All\nenvironments", "Biofilm (g.);\nBiofilm (e.p.)",
                                 "Biofilm (g.);\nSediment", "Sediment;\nBiofilm (e.p.)",
                                 "Biofilm (e.p.)", "Biofilm (g.)", "Sediment",  "Remain.")),
-    mean = ifelse(lab == "Remain. genera", NA, mean),
+    mean = ifelse(lab == " ", NA, mean),
     bin = cut(mean, breaks = bins, labels = FALSE, right = FALSE),
     lab = fct_recode(lab,"Remain. abundance"="Remaining"),
     lab = fct_recode(lab, "Remain. genera"=" "),
-    SampleContent2 = fct_recode(SampleContent2,"Biofilm(e.p.)"="Biofilm (e.p.)"),
+    #SampleContent2 = fct_recode(SampleContent2,"Biofilm(e.p.)"="Biofilm (e.p.)"),
     ) 
 
   
 
 #unique(new_plot_df$core_in)   
-
+data_long$SampleContent3
 # Make the heatmap 
 plot <- 
   # HEATMAP
   new_plot_df %>% 
+  #left_join(data_long %>% distinct(SampleContent2, SampleContent3) %>% 
+  mutate(SampleContent3 = 
+           str_replace(SampleContent3, " ", "\n"), 
+                     SampleContent3 =  factor(SampleContent3, 
+      levels = c("Biofilm\n(g.)",  "Sediment","Biofilm\n(e.p.)", 
+                 "SWW\n(g.)","SWW\n(e.p.)", "IWW", "AS"))) %>% 
+      #by = join_by(SampleContent2), relationship = "many-to-many"
+             # ) %>% 
   mutate(Configuration = if_else(SampleContent2 %in% c("AS", "IWW"), "WWTP", "Sewer system")) %>% 
   ggplot(aes(x = SampleSite, y = lab, fill = as.factor(bin))) + 
   geom_tile() + 
-  ggh4x::facet_nested(core_in~Configuration+SampleContent2, scales = "free", space = "free") +
+  ggh4x::facet_nested(core_in~Configuration+SampleContent3, scales = "free", space = "free") +
   labs(fill="Relative abundance [%]") +
   scale_fill_manual(values = colors, na.value = "grey90",
                     breaks = c(1,2,3,4,5,6,7), 
-                    labels = c("0","0-0.01", "0.01-0.1", "0.1-1", "1-5", "5-10", ">10")) +
+                    labels = fill_legend_label) +
   scale_x_discrete(expand = c(0,0)) + 
   geom_text(aes(label = case_when(mean >= 0.01 & !str_detect(lab, "Remain.") &  lab != " " ~ paste0(round(mean, 2)),
                                   mean < 0.01 & !str_detect(lab, "Remain.") &  lab != " " ~ paste0(" "),
@@ -2485,7 +3891,7 @@ plot <-
                      levels  = c("All\nenvironments", "Biofilm (g.);\nBiofilm (e.p.)",
                                 "Biofilm (g.);\nSediment", "Sediment;\nBiofilm (e.p.)",
                                 "Biofilm (e.p.)", "Biofilm (g.)", "Sediment",  "Remain."),
-                     labels = c("All\nenvironments", "Biofilm (g.);\nBiofilm (e.p.)",
+                     labels = c("All\nhabitats", "Biofilm (g.);\nBiofilm (e.p.)",
                                 "Biofilm (g.);\nSediment", "Sediment;\nBiofilm (e.p.)",
                                 "Biofilm (e.p.)", "Biofilm (g.)", "Sediment",  "Remain."))
       ) %>% 
@@ -2517,17 +3923,17 @@ plot <-
         legend.title.position = "top", legend.title = element_text(size = 16)) 
 
 
-plot_name = "F7_heatmap_core_genera_sewer_solids_after_metadata_update"
-ggsave(plot = plot, paste0(OutputPath, "plots/1_results/", plot_name, ".png"), width = 14.5, height = 16)
+plot_name = "F6_heatmap_core_genera_sewer_solids_after_metadata_update"
+ggsave(plot = plot, paste0(OutputPath, "plots/1_results/", plot_name, ".png"), width = 14.5, height = 17)
 ggsave(plot = plot, paste0(OutputPath, "plots/1_results/", plot_name, ".pdf"), limitsize = F,  useDingbats=FALSE, 
-       width = 14.3, height = 16)
+       width = 14.3, height = 17)
 
 knitr::include_graphics(paste0(OutputPath, "plots/1_results/", plot_name, ".png"))
 
 ```
 
 
-## Figure S11: HM of gut species inclunding genus name
+## Figure S7: HM of gut species inclunding genus name
 
 ```{r}
 
@@ -2550,9 +3956,9 @@ top_each_samplecontent <- data_long %>%
                    filter(!str_detect(Species, "unclas")))
     ) %>% 
     unnest(samples) %>% 
-  group_by(SampleContent2, Species, SampleEnvironment) %>% 
+  group_by(Species, SampleEnvironment) %>% 
   summarise(mean = mean(rel_abun_species), .groups = "drop") %>% 
-  group_by(SampleContent2, SampleEnvironment) %>% 
+  #group_by(SampleEnvironment) %>% 
   slice_max(order_by = mean, n = 30) %>% ungroup() %>% 
   select(-mean)
 
@@ -2605,13 +4011,13 @@ plot_df <- data_long %>% #sample_n(20) %>%
      ) %>% 
     unnest(samples) %>%
   #mutate(SampleSite = SampleContent2) %>%  #### MERGE SAMPLESITES
-  group_by(SampleContent2, SampleSite, lab, SampleID) %>% 
+  group_by(SampleContent3, SampleSite, lab, SampleID) %>% 
   reframe(
     sum = sum(rel_abun_species), 
     n_species = n(),
     Species = if_else(lab == "Remaining", "", Species)
     ) %>% 
-  group_by(SampleContent2, SampleSite, lab, Species) %>% 
+  group_by(SampleContent3, SampleSite, lab, Species) %>% 
   summarise(
       mean = mean(sum), 
       mean_n_species = mean(n_species),
@@ -2642,14 +4048,20 @@ new_plot_df <- rbind(new_rows, plot_df) %>% #print(n = 100) %>%
     lab = fct_recode(lab, "Remain. species"=" "),
         mean = ifelse(lab == "Remain. species", NA, mean),
     bin = cut(mean, breaks = bins, labels = FALSE, right = FALSE),
-    SampleContent2 = fct_recode(SampleContent2,"B.(e.p.)"="Biofilm (e.p.)"))
+    #SampleContent3 = fct_recode(SampleContent3,"B.(e.p.)"="Biofilm (e.p.)"),
+    SampleContent3 = fct_recode(SampleContent3,"Biofilm\n(e.p.)"="Biofilm (e.p.)")
+    )
 
 
 # Make the heatmap 
 plot <- 
   # HEATMAP
   new_plot_df %>% 
-  mutate(Configuration = if_else(SampleContent2 %in% c("AS", "IWW"), "WWTP", "Sewer system"),
+  mutate(Configuration = if_else(SampleContent3 %in% c("AS", "IWW"), "WWTP", "Sewer system"),
+         SampleContent3 = 
+           factor(SampleContent3, 
+            levels = c("Biofilm (g.)", "Sediment", "Biofilm\n(e.p.)", "SWW\n(g.)","SWW\n(e.p.)" ,"IWW","AS")),#,
+           # labels = c("Biofilm (g.)", "Sediment", "Biofilm (e.p.)", "SWW (g.)","SWW\n(e.p.)" ,"IWW","AS")
          # SampleEnvironment_obs = ifelse(is.na(SampleEnvironment_obs), " ",
          #                                SampleEnvironment_obs),
          # SampleEnvironment_obs = factor(SampleEnvironment_obs,
@@ -2663,7 +4075,7 @@ plot <-
          x = "x") %>% 
   ggplot(aes(x = SampleSite, y = lab, fill = as.factor(bin))) + 
   geom_tile() + 
-  ggh4x::facet_nested(x~Configuration+SampleContent2, scales = "free", space = "free") +
+  ggh4x::facet_nested(x~Configuration+SampleContent3, scales = "free", space = "free") +
   labs(fill="Relative abundance [%]") +
   scale_fill_manual(values = colors, na.value = "grey90",
                     breaks = c(1,2,3,4,5,6,7), 
@@ -2697,10 +4109,10 @@ plot <-
 
 
 
-plot_name = "S11_heatmap_top30_gut_species_in_SWW"
-ggsave(plot = plot, paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".png"), width = 13, height = 9)
+plot_name = "S7_heatmap_top25_gut_species_in_SWW"
+ggsave(plot = plot, paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".png"), width = 13, height = 9.5)
 ggsave(plot = plot, paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".pdf"), limitsize = F, useDingbats=FALSE, 
-       width = 13, height = 9)
+       width = 13, height = 9.5)
 
 knitr::include_graphics(paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".png"))
 
@@ -2710,7 +4122,7 @@ knitr::include_graphics(paste0(OutputPath, "plots/2_supplementary_figures/", plo
 
 
 
-## Figure S12: Heatmap of functional guilds 
+## Figure S13: Heatmap of functional guilds 
 
 ```{r}
 
@@ -2791,14 +4203,19 @@ plot <-
                                   .default = "missing",
                                   ))) +  #)
   theme(axis.text.y = element_markdown(size = 12),
-        legend.title = element_text(vjust = 1, size = 16),
-        panel.grid = element_blank(),
-        strip.text.x = element_text(size = 16),
+        legend.text = element_text(size = 14, color = "black", 
+                                   margin = margin(l = unit(5,"mm"))),
+        legend.title = element_text(vjust = 0.8, size = 16, 
+                                    color="grey10", 
+                                    margin = margin(r = unit(15,"mm"))),
+panel.grid = element_blank(),
+        strip.text.x = element_text(size = 15.8),
         panel.spacing=unit(0.5,"mm"),
         axis.title = element_blank(), 
         strip.text.y = element_text(angle = 0, size = 16),
         strip.background = element_rect(fill = "grey90"),
-        axis.text.x = element_text(size = 12, hjust = 1, vjust = 1, angle = 45),
+        axis.text.x = element_text(size = 12, hjust = 1, vjust = 1, angle = 45, 
+                                   color = "black"),
         legend.position = "bottom"
         #plot.background = element_rect(fill = "grey70")
         ) +
@@ -2806,10 +4223,536 @@ plot <-
                              override.aes = list(color = "black", size = 0.5))) 
 
 
-plot_name = "S12_heatmap_functinal_guilds"
-ggsave(plot = plot, paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".png"), width = 12, height = 10.5)
-ggsave(plot = plot, paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".pdf"), limitsize = F, useDingbats=FALSE, width = 12, height = 11)
+plot_name = "S13_heatmap_functinal_guilds"
+ggsave(plot = plot, paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".png"), width = 12.2, height = 10.5)
+ggsave(plot = plot, paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".pdf"), limitsize = F, useDingbats=FALSE, width = 12.2, height = 10.5)
 knitr::include_graphics(paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".png"))
+
+
+
+```
+
+
+
+## Figure S12: HM of the detected and not detected bacteria (growing)
+
+```{r}
+
+# Create the bins and corresponding colors
+# bins <- c(0,0.0000000000000000001,0.01, 0.1, 1, 5, 10, Inf)
+# colors <- c("grey90","white","#FFF5EB", "#F5C9B0", "#EC9E75", "#E2733B", "#D94801")
+# fill_legend_label = c("0","0-0.01", "0.01-0.1", "0.1-1", "1-5", "5-10", ">10")
+
+bins <- c(0,0.0000000000000000001,0.001, 0.005, 0.01, 0.1, 1, Inf)
+colors <- c("grey90","white","#FFF5EB", "#F5C9B0", "#EC9E75", "#E2733B", "#D94801")
+fill_legend_label = c("0","0-0.001", "0.001-0.005", "0.005-0.01", "0.01-0.1", "0.1-1", ">1")
+
+
+#Select top 20
+top_each_samplecontent <- data_long %>%
+    # filter(SampleContent2 %in%
+    #          #c("AS")) %>%
+    #           c("AS","Biofilm (g.)", "Sediment", "Biofilm (e.p.)")) %>% 
+  filter(SampleSite != "AalborgWest_before") %>% 
+  mutate(
+    samples = 
+             map(.x = samples, ~
+                   ungroup(.) %>% 
+                   filter(Species %in% 
+                            (best_core_group %>% filter(best_core_group == "detected") %>% pull(Species))) %>% 
+                   filter(OTU %in% (growth_df %>% filter(growth_AS == "growing") %>% pull(OTU))) %>%         
+                   #filter(OTU %in% unlist(gut_OTU$OTU)) %>% 
+                   distinct(Species, rel_abun_species)  %>% 
+                   filter(!str_detect(Species, "unclas"))
+                 )
+    ) %>% 
+    unnest(samples) %>% 
+  group_by(SampleContent2, Species, SampleEnvironment) %>% 
+  summarise(mean = mean(rel_abun_species), .groups = "drop") %>% 
+  group_by(SampleContent2, SampleEnvironment) %>% 
+  slice_max(order_by = mean, n = 8) %>% ungroup() %>% 
+  select(-mean)
+
+top_each_samplecontent %>% distinct(Species)
+
+# Merge reamining
+merge_vec <- 
+  data_long %>% sample_n(1) %>% 
+  unnest(samples) %>% 
+  mutate(lab = case_when(Species %in% unlist(top_each_samplecontent$Species) ~ Species, 
+                         !Species %in% unlist(top_each_samplecontent$Species) ~ "Remaining", 
+                         .default = "missing")) %>%
+  mutate(lab = case_when(
+        str_detect(Species, "midas") & lab != "Remaining" ~ paste0(str_remove(Species, "s__")),
+        !str_detect(Species, "midas") & lab != "Remaining"~ paste0("*", str_remove(Species, "s__"), "*"),
+        lab == "Remaining" ~ lab, .default = "missing"),
+         lab = if_else(str_detect(lab, "Ca_"), str_remove_all(lab, "\\*"), lab),
+         lab = str_replace_all(lab, "Ca_", "*Ca.* "), 
+        lab = if_else(!str_detect(lab, "midas"), 
+                            str_replace_all(lab, "_", " "),lab)
+        
+  ) %>% 
+   mutate(lab_genus = case_when(
+        str_detect(Genus, "midas") ~ paste0(str_remove(Genus, "g__")),
+        !str_detect(Genus, "midas") ~ paste0("*", str_remove(Genus, "g__"), "*")),
+        lab_genus = if_else(str_detect(lab_genus, "Ca_"), str_remove_all(lab_genus, "\\*"), lab_genus),
+         lab_genus = str_replace_all(lab_genus, "Ca_", "*Ca.* "), 
+        lab_genus = if_else(!str_detect(lab_genus, "midas"), 
+                            str_replace_all(lab_genus, "_", " "),lab_genus)
+  ) %>% 
+  distinct(Genus, Species, lab, lab_genus) %>% 
+ mutate(lab = if_else(lab != "Remaining" & str_detect(lab, "midas"), paste0(lab_genus,";",lab), lab))
+
+
+data_long %>% colnames()
+
+data_long %>% distinct(SampleSite) 
+
+# Make a dataframe for plotting 
+plot_df <- data_long %>% #sample_n(20) %>% 
+    filter(SampleSite != "AalborgWest_before") %>% 
+   mutate(
+     SampleSite = case_when(
+      str_detect(SampleSite, "AalborgWest")~ "Aalborg West",
+      str_detect(SampleSite, "AalborgØst")~ "Aalborg East",
+      .default = SampleSite),
+     samples = 
+             map(.x = samples, ~
+                   ungroup(.) %>% 
+                   #filter(OTU %in% unlist(gut_OTU$OTU)) %>% 
+                   distinct(Species, rel_abun_species) %>% 
+                   inner_join(merge_vec, by = "Species") %>% 
+                   filter(rel_abun_species != 0 | Species %in% unlist(top_each_samplecontent$Species))
+                   ),
+     SampleSite2 = substr(SampleSite, 1, 2),
+     SampleSite = if_else(System == "Sewer system", 
+                          paste0(SampleSite, ";", format(SampleDate,format="%d/%m/%y")), 
+                          SampleSite)
+     ) %>% #pull(SampleSite)
+    unnest(samples) %>%
+  #mutate(SampleSite = SampleContent2) %>%  #### MERGE SAMPLESITES
+  group_by(SampleContent2, SampleSite, lab, SampleID, SampleSite2) %>% 
+  reframe(
+    sum = sum(rel_abun_species), 
+    n_species = n(),
+    Species = if_else(lab == "Remaining", "", Species)
+    ) %>% 
+  group_by(SampleContent2, SampleSite, lab, Species, SampleSite2) %>% 
+  summarise(
+      mean = mean(sum), 
+      mean_n_species = mean(n_species),
+      .groups = "drop") %>% 
+  group_by(lab) %>% 
+  mutate(mean_across_all = mean(mean, na.rm = T)) %>% 
+  ungroup() 
+# %>% 
+#   full_join(top_each_samplecontent) %>% 
+#   ungroup()
+
+## Factor final dataframe
+  # new_rows <- plot_df %>% 
+  #   filter(lab == "Remaining") %>% 
+  #   mutate(lab = " ")
+
+
+new_plot_df <- 
+  plot_df %>% 
+  #rbind(new_rows, plot_df) %>% #print(n = 100) %>%
+  #full_join(top_each_samplecontent_groups, by = join_by(Species)) %>%
+  arrange(#SampleEnvironment_obs, 
+          mean_across_all) %>% 
+  mutate(
+    lab = str_replace(lab, "Allorhizobium-Neorhizobium-Pararhizobium-Rhizobium","Allorhizobium-Neo."),
+    lab = fct_inorder(lab),
+    lab = fct_relevel(lab, "Remaining", after = 0),
+    lab = fct_relevel(lab, " ", after = 0),
+    lab = fct_recode(lab,"Remain. abundance"="Remaining"),
+    lab = fct_recode(lab, "Remain. species"=" "),
+        mean = ifelse(lab == "Remain. species", NA, mean),
+    bin = cut(mean, breaks = bins, labels = FALSE, right = FALSE),
+    #SampleContent2 = fct_recode(SampleContent2,"B.(e.p.)"="Biofilm (e.p.)")
+    ) %>% 
+  filter(!str_detect(lab, "Remain."))
+
+
+# Make the heatmap 
+plot_detected <- 
+  # HEATMAP
+  new_plot_df %>% 
+  mutate(Configuration = if_else(SampleContent2 %in% c("AS", "IWW"), "WWTP", "Sewer system"),
+         # SampleEnvironment_obs = ifelse(is.na(SampleEnvironment_obs), " ",
+         #                                SampleEnvironment_obs),
+         # SampleEnvironment_obs = factor(SampleEnvironment_obs,
+         #   levels = c("sewer_wet_solids;wastewater;AS","sewer_wet_solids",
+         #              "wastewater",#  "sewer_wet_solids;AS", 
+         #              "AS", " "),
+         #   labels = c("All", "Sewer env.", "Wastewater", 
+         #              #"Sewer env. + AS"
+         #              "AS", " ")
+         # ),
+         x = "x") %>% 
+  ggplot(aes(x = SampleSite, y = lab, fill = as.factor(bin))) + 
+  geom_tile() + 
+  ggh4x::facet_nested(x~Configuration+SampleContent2+SampleSite2, scales = "free"#, space = "free"
+                      ) +
+  labs(fill="Relative abundance [%]") +
+  scale_fill_manual(values = colors, na.value = "grey90",
+                    breaks = c(1,2,3,4,5,6,7), 
+                    labels = fill_legend_label) +
+  scale_x_discrete(expand = c(0,0)) + 
+  geom_text(aes(label = case_when(mean >= 0.1 & Configuration == "WWTP"~ paste0(round(mean, 1)),
+                                  .default = " " ))) +
+  # geom_text(aes(label = case_when(mean >= 0.1 & lab != "Remain. abundance" &  lab != "Remain. species" ~
+  #                                 paste0(round(mean, 1)),
+  #                                 mean < 0.1 & lab != "Remain. abundance" &  lab != "Remain. species" ~ "",
+  #                                 mean >= 0.1 & lab == "Remain. abundance" ~ paste0(round(mean, 1)),
+  #                                 lab == "Remain. species" ~ paste0(round(mean_n_species, 0)),
+  #                                 is.na(mean) ~ "",
+  #                                 .default = "missing",
+                                   #)
+  theme(axis.text.y = element_markdown(size = 12, color = "black"),
+        legend.text = element_text(size = 12, color = "black", margin = margin(l = unit(5,"mm"))),
+        legend.title = element_text(vjust = 0.8, size = 16, margin = margin(r = unit(15,"mm"))),
+        strip.text.y = element_blank(),
+        panel.grid = element_blank(),
+        panel.spacing=unit(0.4,"mm"),
+        #axis.ticks.x = element_blank(), 
+        legend.position = "bottom",
+        strip.text.x = element_text(size = 13),
+        axis.title = element_blank(), 
+        strip.background = element_rect(fill = "grey90"),
+        #strip.text.y = element_text(angle = 0, size = 16),
+        #axis.text.x = element_text(size = 10, hjust = 1, vjust = 1, angle = 45,color = "black"),
+        axis.text.x = element_text(size = 8, hjust = 0.5, vjust = 0.5, 
+                                   angle = 90,color = "black"),
+        #plot.background = element_rect(fill = "grey70")
+        ) +
+  guides(fill = guide_legend(reverse = TRUE,
+                             override.aes = list(color = "black", 
+                                                 size = 0.5), nrow = 1))
+
+
+
+################################################################
+
+
+#Select top 20
+top_each_samplecontent <- data_long %>%
+    # filter(SampleContent2 %in%
+    #           c("AS")) %>%
+    # # #          c("AS","Biofilm (g.)", "Sediment", "Biofilm (e.p.)")) %>% 
+  filter(SampleSite != "AalborgWest_before") %>% 
+  mutate(
+    samples = 
+             map(.x = samples, ~
+                   ungroup(.) %>% 
+                   filter(Species %in% 
+                            (best_core_group %>% filter(best_core_group == "not detected") %>% pull(Species))) %>% 
+                   filter(OTU %in% (growth_df %>% filter(growth_AS == "growing") %>% pull(OTU))) %>%         
+                   #filter(OTU %in% unlist(gut_OTU$OTU)) %>% 
+                   distinct(Species, rel_abun_species)  %>% 
+                   filter(!str_detect(Species, "unclas"))
+                 )
+    ) %>% 
+    unnest(samples) %>% 
+  group_by(SampleContent2, Species, SampleEnvironment) %>% 
+  summarise(mean = mean(rel_abun_species), .groups = "drop") %>% 
+  group_by(SampleContent2, SampleEnvironment) %>% 
+  slice_max(order_by = mean, n = 8) %>% ungroup() %>% 
+  select(-mean)
+
+top_each_samplecontent %>% distinct(Species)
+
+# Merge reamining
+merge_vec <- 
+  data_long %>% sample_n(1) %>% 
+  unnest(samples) %>% 
+  mutate(lab = case_when(Species %in% unlist(top_each_samplecontent$Species) ~ Species, 
+                         !Species %in% unlist(top_each_samplecontent$Species) ~ "Remaining", 
+                         .default = "missing")) %>%
+  mutate(lab = case_when(
+        str_detect(Species, "midas") & lab != "Remaining" ~ paste0(str_remove(Species, "s__")),
+        !str_detect(Species, "midas") & lab != "Remaining"~ paste0("*", str_remove(Species, "s__"), "*"),
+        lab == "Remaining" ~ lab, .default = "missing"),
+         lab = if_else(str_detect(lab, "Ca_"), str_remove_all(lab, "\\*"), lab),
+         lab = str_replace_all(lab, "Ca_", "*Ca.* "), 
+        lab = if_else(!str_detect(lab, "midas"), 
+                            str_replace_all(lab, "_", " "),lab)
+        
+  ) %>% 
+   mutate(lab_genus = case_when(
+        str_detect(Genus, "midas") ~ paste0(str_remove(Genus, "g__")),
+        !str_detect(Genus, "midas") ~ paste0("*", str_remove(Genus, "g__"), "*")),
+        lab_genus = if_else(str_detect(lab_genus, "Ca_"), str_remove_all(lab_genus, "\\*"), lab_genus),
+         lab_genus = str_replace_all(lab_genus, "Ca_", "*Ca.* "), 
+        lab_genus = if_else(!str_detect(lab_genus, "midas"), 
+                            str_replace_all(lab_genus, "_", " "),lab_genus)
+  ) %>% 
+  distinct(Genus, Species, lab, lab_genus) %>% 
+ mutate(lab = if_else(lab != "Remaining" & str_detect(lab, "midas"), paste0(lab_genus,";",lab), lab))
+
+
+# Make a dataframe for plotting 
+plot_df <- data_long %>% #sample_n(20) %>% 
+    filter(SampleSite != "AalborgWest_before") %>% 
+   mutate(
+     SampleSite = case_when(
+      str_detect(SampleSite, "AalborgWest")~ "Aalborg West",
+      str_detect(SampleSite, "AalborgØst")~ "Aalborg East",
+      .default = SampleSite),
+     samples = 
+             map(.x = samples, ~
+                   ungroup(.) %>% 
+                   #filter(OTU %in% unlist(gut_OTU$OTU)) %>% 
+                   distinct(Species, rel_abun_species) %>% 
+                   inner_join(merge_vec, by = "Species") %>% 
+                   filter(rel_abun_species != 0 | Species %in% unlist(top_each_samplecontent$Species))
+                   ),
+     SampleSite2 = substr(SampleSite, 1, 2),
+     SampleSite = if_else(System == "Sewer system", 
+                          paste0(SampleSite, ";", format(SampleDate,format="%d/%m/%y")), 
+                          SampleSite)
+     ) %>% #pull(SampleSite)
+    unnest(samples) %>%
+  #mutate(SampleSite = SampleContent2) %>%  #### MERGE SAMPLESITES
+  group_by(SampleContent2, SampleSite, lab, SampleID, SampleSite2) %>% 
+  reframe(
+    sum = sum(rel_abun_species), 
+    n_species = n(),
+    Species = if_else(lab == "Remaining", "", Species)
+    ) %>% 
+  group_by(SampleContent2, SampleSite, lab, Species, SampleSite2) %>% 
+  summarise(
+      mean = mean(sum), 
+      mean_n_species = mean(n_species),
+      .groups = "drop") %>% 
+  group_by(lab) %>% 
+  mutate(mean_across_all = mean(mean, na.rm = T)) %>% 
+  ungroup() 
+# %>% 
+#   full_join(top_each_samplecontent) %>% 
+#   ungroup()
+
+## Factor final dataframe
+  # new_rows <- plot_df %>% 
+  #   filter(lab == "Remaining") %>% 
+  #   mutate(lab = " ")
+
+
+new_plot_df <- 
+  plot_df %>% 
+  #rbind(new_rows, plot_df) %>% #print(n = 100) %>%
+  #full_join(top_each_samplecontent_groups, by = join_by(Species)) %>%
+  arrange(#SampleEnvironment_obs, 
+          mean_across_all) %>% 
+  mutate(
+    lab = str_replace(lab, "Allorhizobium-Neorhizobium-Pararhizobium-Rhizobium","Allorhizobium-Neo."),
+    lab = fct_inorder(lab),
+    lab = fct_relevel(lab, "Remaining", after = 0),
+    lab = fct_relevel(lab, " ", after = 0),
+    lab = fct_recode(lab,"Remain. abundance"="Remaining"),
+    lab = fct_recode(lab, "Remain. species"=" "),
+        mean = ifelse(lab == "Remain. species", NA, mean),
+    bin = cut(mean, breaks = bins, labels = FALSE, right = FALSE),
+    #SampleContent2 = fct_recode(SampleContent2,"B.(e.p.)"="Biofilm (e.p.)")
+    ) %>% 
+  filter(!str_detect(lab, "Remain."))
+
+
+# Make the heatmap 
+plot_not_detected <- 
+  # HEATMAP
+  new_plot_df %>% 
+  mutate(Configuration = if_else(SampleContent2 %in% c("AS", "IWW"), "WWTP", "Sewer system"),
+         # SampleEnvironment_obs = ifelse(is.na(SampleEnvironment_obs), " ",
+         #                                SampleEnvironment_obs),
+         # SampleEnvironment_obs = factor(SampleEnvironment_obs,
+         #   levels = c("sewer_wet_solids;wastewater;AS","sewer_wet_solids",
+         #              "wastewater",#  "sewer_wet_solids;AS", 
+         #              "AS", " "),
+         #   labels = c("All", "Sewer env.", "Wastewater", 
+         #              #"Sewer env. + AS"
+         #              "AS", " ")
+         # ),
+         x = "x") %>% 
+  ggplot(aes(x = SampleSite, y = lab, fill = as.factor(bin))) + 
+  geom_tile() + 
+  ggh4x::facet_nested(x~Configuration+SampleContent2+SampleSite2, scales = "free"#, space = "free"
+                      ) +
+  labs(fill="Relative abundance [%]") +
+  scale_fill_manual(values = colors, na.value = "grey90",
+                    breaks = c(1,2,3,4,5,6,7), 
+                    labels = fill_legend_label) +
+  scale_x_discrete(expand = c(0,0)) + 
+   geom_text(aes(label = case_when(mean >= 0.1 & Configuration == "WWTP"~ paste0(round(mean, 1)),
+                                  .default = " " ))) +
+  # geom_text(aes(label = case_when(mean >= 0.1 & lab != "Remain. abundance" &  lab != "Remain. species" ~
+  #                                 paste0(round(mean, 1)),
+  #                                 mean < 0.1 & lab != "Remain. abundance" &  lab != "Remain. species" ~ "",
+  #                                 mean >= 0.1 & lab == "Remain. abundance" ~ paste0(round(mean, 1)),
+  #                                 lab == "Remain. species" ~ paste0(round(mean_n_species, 0)),
+  #                                 is.na(mean) ~ "",
+  #                                 .default = "missing",
+  #                                 ))) +  #)
+  theme(axis.text.y = element_markdown(size = 12, color = "black"),
+        legend.text = element_text(size = 12, color = "black", margin = margin(l = unit(5,"mm"))),
+        legend.title = element_text(vjust = 0.8, size = 16, margin = margin(r = unit(15,"mm"))),
+        strip.text.y = element_blank(),
+        panel.grid = element_blank(),
+        panel.spacing=unit(0.4,"mm"),
+        #axis.ticks.x = element_blank(), 
+        legend.position = "bottom",
+        strip.text.x = element_text(size = 13),
+        axis.title = element_blank(), 
+        strip.background = element_rect(fill = "grey90"),
+        #strip.text.y = element_text(angle = 0, size = 16),
+        #axis.text.x = element_text(size = 10, hjust = 1, vjust = 1, angle = 45,color = "black"),
+        axis.text.x = element_text(size = 8, hjust = 0.5, vjust = 0.5, 
+                                   angle = 90,color = "black"),
+        #plot.background = element_rect(fill = "grey70")
+        ) +
+  guides(fill = guide_legend(reverse = TRUE,
+                             override.aes = list(color = "black", 
+                                                 size = 0.5), nrow = 1))
+
+plot <- plot_detected + #theme(axis.text.x = element_blank()) +
+  plot_not_detected +
+  plot_annotation(tag_levels = "A") +
+plot_layout(ncol = 1, guides = "collect", 
+              #axes = "collect_x", 
+            heights = c(1,1.2)) & 
+  theme(plot.tag = element_text(size = 30),
+        legend.text = element_text(size = 18), legend.position = "bottom")
+
+
+
+plot_name = "S12_heatmap_top10_growing_sewer_not_detected_species_in_AS"
+ggsave(plot = plot, paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".png"), 
+        width = 20, height = 19)
+ggsave(plot = plot, paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".pdf"), limitsize = F, useDingbats=FALSE, 
+       width = 20, height = 19)
+
+knitr::include_graphics(paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".png"))
+
+
+
+```
+
+
+
+
+
+## Presentation: Heatmap of PAOs  
+
+```{r, eval=FALSE}
+
+# Create the bins and corresponding colors
+bins <- c(0,0.0000000000000000001, 0.01, 0.05,0.1, 1, 5, Inf)
+colors <- c("grey90","white","#FFF5EB", "#F5C9B0", "#EC9E75", "#E2733B", "#D94801")
+
+df_functional <- df_functional %>% 
+  filter(functional_group == "PAOs") %>% 
+  filter(Genus %in% c(
+                      "g__Ca_Accumulibacter", 
+                      "g__Ca_Phosphoribacter", 
+                      "g__Azonexus") )
+
+
+# Make a dataframe for plotting 
+plot_df <- data_long %>% #sample_n(20) %>% 
+    filter(SampleSite != "AalborgWest_before") %>% 
+   mutate(samples = 
+             map(.x = samples, ~
+                   ungroup(.) %>% 
+                   distinct(Family, Genus, rel_abun_genus) %>% 
+                   inner_join(df_functional, by = "Genus") %>% 
+                   filter(rel_abun_genus != 0 | Genus %in% unlist(df_functional$Genus))
+                   )) %>% 
+    unnest(samples) %>% 
+   mutate(
+     lab = Genus,
+     lab = case_when(
+        str_detect(Genus, "midas") & lab != "Remaining" ~ paste0(str_remove(Genus, "g__")),
+        !str_detect(Genus, "midas") & lab != "Remaining"~ paste0("*", str_remove(Genus, "g__"), "*"),
+        lab == "Remaining" ~ lab, .default = "missing"),
+         lab = if_else(str_detect(lab, "Ca_"), str_remove_all(lab, "\\*"), lab),
+         lab = str_replace_all(lab, "Ca_", "*Ca.* "),
+          lab = if_else(str_detect(lab, "midas"), paste0("*", str_sub(Family,4), "*; ", lab), lab),
+         #SampleContent2 = fct_recode(SampleContent2,"B.(e.p.)"="Biofilm (e.p.)"),
+     SampleSite = case_when(
+      str_detect(SampleSite, "AalborgWest")~ "Aalborg West",
+      str_detect(SampleSite, "AalborgØst")~ "Aalborg East",
+      .default = SampleSite),
+  ) %>% 
+  mutate(SampleSite = SampleContent2) %>%  #### MERGE SAMPLESITES
+  group_by(SampleContent2, SampleSite, lab, SampleID, functional_group) %>% 
+  reframe(
+    sum = sum(rel_abun_genus), 
+    n_genus = n(),
+    Genus = if_else(lab == "Remaining", "", Genus)
+    ) %>% 
+  group_by(SampleContent2, SampleSite, lab, Genus, functional_group) %>% 
+  summarise(
+      mean = mean(sum), 
+      mean_n_genus = mean(n_genus),
+      .groups = "drop") %>% 
+  group_by(lab) %>% 
+  mutate(mean_across_all = mean(mean, na.rm = T)) %>% 
+  ungroup() %>% 
+  mutate(bin = cut(mean, breaks = bins, labels = FALSE, right = FALSE),
+         functional_group = factor(functional_group, 
+                                   levels = c("PAOs", "GAOs", "Denitrifiers", 
+                                              "Nitrifiers", "Filaments")),) %>% 
+  arrange(functional_group, 
+          desc(mean_across_all)) %>% 
+  mutate(lab = fct_inorder(lab))
+
+
+
+
+# Make the heatmap 
+plot <- 
+  # HEATMAP
+  plot_df %>% 
+  mutate(Configuration = if_else(SampleContent2 %in% c("AS", "IWW"), "WWTP", "Sewer system")) %>% 
+  ggplot(aes(x = SampleSite, y = lab, fill = as.factor(bin))) + 
+  geom_tile() + 
+  ggh4x::facet_nested(functional_group~Configuration+SampleContent2, scales = "free", space = "free") +
+  labs(fill="Relative abundance [%]") +
+  scale_fill_manual(values = colors, 
+                    breaks = c(1,2,3,4,5,6,7), 
+                    labels = c("0","0-0.01", "0.01-0.05", "0.05-0.1", "0.1-1", "1-5", ">5")
+                    ) +
+  scale_x_discrete(expand = c(0,0)) + 
+  scale_y_discrete(expand = c(0,0)) + 
+  geom_text(aes(label = case_when(mean >= 0.1 & lab != "Remaining" &  lab != " " ~ paste0(round(mean, 1)),
+                                  mean < 0.1 & lab != "Remaining" &  lab != " " ~ "",
+                                  mean >= 0.1 & lab == "Remaining" ~ paste0(round(mean, 1)),
+                                  lab == " " ~ paste0("(",round(mean_n_genus, 0),")"),
+                                  is.na(mean) ~ "",
+                                  .default = "missing",
+                                  )), size = 5) +  #)
+  theme(axis.text.y = element_markdown(size = 12),
+        legend.title = element_text(vjust = 1, size = 16),
+        panel.grid = element_blank(),
+        strip.text.x = element_text(size = 13),
+        panel.spacing=unit(0.5,"mm"),
+        axis.title = element_blank(), 
+        strip.text.y = element_blank(), #element_text(angle = 0, size = 16),
+        strip.background = element_rect(fill = "grey90"),
+        axis.text.x = element_blank(), #element_text(size = 12, hjust = 0.5, vjust = 0.5, angle = 0),
+        legend.position = "bottom",
+        axis.ticks.x = element_blank()
+        #plot.background = element_rect(fill = "grey70")
+        ) +
+  guides(fill = guide_legend(reverse = TRUE,nrow = 2,
+                             override.aes = list(color = "black", size = 0.5))) 
+
+
+plot_name = "S12_heatmap_PAOs"
+ggsave(plot = plot, paste0(OutputPath, "plots/3_presentations/", plot_name, ".png"), width = 8, height = 3)
+ggsave(plot = plot, paste0(OutputPath, "plots/3_presentations/", plot_name, ".pdf"), limitsize = F, useDingbats=FALSE, width = 8, height = 4)
+knitr::include_graphics(paste0(OutputPath, "plots/3_presentations/", plot_name, ".png"))
 
 
 
@@ -2818,7 +4761,7 @@ knitr::include_graphics(paste0(OutputPath, "plots/2_supplementary_figures/", plo
 
 # Section: Wastewater resembles biofilm and sediments after rain 
 
-## Subplot: SWW
+### F7A: Subplot: SWW
 
 ```{r, eval=TRUE}
 
@@ -2916,10 +4859,13 @@ box <-
    ggplot(aes(x = rainy, y = distance, color = SampleContent2_2, fill = SampleContent2_2
               )) +
    #facet_wrap(~site_content, ncol = 4) +
-  geom_boxplot(outlier.shape = NA, alpha = 0.2) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.5) +
+  geom_jitter(aes(color = SampleContent2_2), size = 1, alpha = 0.65, shape = 16,
+              width = 0.2) +
+  #geom_boxplot(outlier.shape = NA, alpha = 0.2) +
    stat_pvalue_manual(stat.test, hide.ns = TRUE) +
    #geom_text_repel(aes(label = paste0(SampleContent2, ";",SampleContent2_2))) +
-   geom_jitter() + 
+   #geom_jitter() + 
    facet_grid(x~SampleContent2_2, scales = "free_x", space = "free_x") +
   scale_color_manual(values = SampleContent2_colors) +
     scale_fill_manual(values = SampleContent2_colors) +
@@ -2928,15 +4874,17 @@ box <-
   #scale_color_manual(values = c("#A7C7E7","#F4A582", "#D6604D")) + 
   ylab(label =paste0("Bray-Curtis distance")) +
   theme_minimal() + 
-  theme(strip.background = element_rect(fill = "gray90", linetype = 0),
-        strip.text = element_text(size = 14, face = "bold"), 
-        axis.text = element_text(size = 12),
+  theme(strip.background = element_rect(fill = "gray90", linetype = 1, color = "gray70"),
+        strip.text = element_text(size = 14), 
+        axis.text = element_text(size = 12, color="grey10"),
         legend.position = "none", 
         axis.title = element_markdown(#fill = "green4", 
-                                        size = 14), 
+                                        size = 14, color="grey10"), 
         strip.text.y = element_blank(), 
+        panel.border = element_rect(color = "gray70", fill = "transparent"),
         #axis.title.x = element_blank(), 
-        legend.title = element_blank()
+        legend.title = element_blank(),
+        axis.ticks = element_line(color = "gray70")
         )
 
 box
@@ -2950,7 +4898,6 @@ box
 
 
 ## IWW BC compared to biofilm and sediments
-
 
 ```{r, eval=FALSE}
 ### Make TSR 
@@ -3044,7 +4991,8 @@ box
 
 ```
 
-### Figure S15: The Bray-Curtis (BC) distance between IWW and sewer environments as a function of time since rain event rain (TSR) for IWW from Aalborg East and West WWTP. 
+
+### Figure S16: The Bray-Curtis (BC) distance between IWW and sewer environments as a function of time since rain event rain (TSR) for IWW from Aalborg East and West WWTP. 
 
 ```{r, eval=TRUE}
 
@@ -3231,42 +5179,47 @@ cat_data <- rbind(long_format_df_EAST, long_format_df_WEST) %>%
 plot <- cat_data %>% 
   #mutate(t_r = if_else(test_var <= 3, "<3", ">3")) %>% 
   ggplot(aes(x = test_var, y = distance,color = SampleContent2_2)) + 
-  geom_jitter(aes(fill = SampleContent2_2), shape = 21) +
+  geom_jitter(aes(fill = SampleContent2_2, shape = SampleContent2_2)) +
   scale_color_manual(values = SampleContent2_colors) +
   scale_fill_manual(values = SampleContent2_colors) +
   ylab("Bray-Curtis distance to IWW") + 
   xlab("Time since rain event (TSR) [Days]") + 
   geom_smooth(aes(color = SampleContent2_2),
-    method = "lm", 
+    method = "lm", show.legend = F,
     se = T) + 
-  ggpmisc::stat_poly_line(fill = "grey90") +
+  ggpmisc::stat_poly_line(fill = "grey90", show.legend = F) +
   ggpmisc::stat_poly_eq(ggpmisc::use_label(c("eq", "R2", "p")), label.y = c(0.18, 0.13, 0.08), label.x = c(0.4), hjust = 0, ) + 
   geom_vline(xintercept = 3.5, linetype = 2) +
   scale_x_continuous(expand = c(0.01,0), limits = c(0,30), n.breaks = 8) +
-  guides(color = "none",
-         fill = guide_legend(override.aes = list(size = 5)),
-          line = "none") +
+  guides(color = guide_legend(override.aes = list(size = 5), title = "Habitat"),
+         fill = "none", 
+         shape = guide_legend(override.aes = list(size = 5), title = "Habitat"),
+         line = "none") +
   theme_bw() +
   theme(legend.position = "bottom", 
-        legend.title = element_blank(),
+        legend.text = element_text(size = 14, color = "black", margin = margin(l = unit(5,"mm"))),
+        legend.title = element_text(vjust = 0.8, size = 16, 
+                                    color="grey10", 
+                                    margin = margin(r = unit(15,"mm"))),
+        #legend.title = element_blank(),
         strip.background=element_rect(color="grey30", fill="grey90"),
         panel.border=element_rect(color="grey10", fill = NA),
         panel.spacing=unit(2,"mm"),
-        axis.text.y = element_text(size = 14),
-        axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14, color="grey10"),
+        axis.text.x = element_text(size = 14, color="grey10"),
         axis.title =element_text(size = 14),
         strip.text.x = element_text(size = 14), 
-        legend.text =  element_text(size = 14),
+        #legend.text =  element_text(size = 14),
         ) + 
   facet_wrap(~SampleSite, nrow = 2)
 #plot_com
 
 
-plot_name = "S15_linear_model_BC_IWW_VS_sewer_AAW"
-ggsave(plot = plot, paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".png"), width = 8, height = 8)
+plot_name = "S16_linear_model_BC_IWW_VS_sewer_AAW"
+ggsave(plot = plot, paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".png"), width = 10, height = 8)
 ggsave(plot = plot, paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".pdf"), 
        limitsize = F, useDingbats=FALSE,
-       width = 9, height = 5)
+       width = 10, height = 8)
 
 knitr::include_graphics(paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".png"))
 
@@ -3276,7 +5229,7 @@ knitr::include_graphics(paste0(OutputPath, "plots/2_supplementary_figures/", plo
 
 
 
-## Subplot IWW More or less than TSR >= 3 Days
+### F7B: Subplot IWW More or less than TSR >= 3 Days
 
 ```{r, eval=TRUE}
 
@@ -3298,24 +5251,29 @@ stat.test <- stat.test %>% rstatix::add_xy_position(x = "t_r", group = "SampleCo
 
 plot_AAW <- cat_data %>% 
   ggplot(aes(x = t_r, y = distance, color = SampleContent2_2, fill = SampleContent2_2)) + 
-  geom_jitter(aes(color = SampleContent2_2)) +
-  geom_boxplot(outlier.shape = NA, alpha = 0.2) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.5) +
+  geom_jitter(aes(color = SampleContent2_2), , size = 1, alpha = 0.65, shape = 16,
+              width = 0.2) +
     ggpubr::stat_pvalue_manual(stat.test, label = "p.adj.signif") + 
   ylab("Bray-Curtis distance") + 
   xlab("Time since rain event (TSR)") + 
   scale_color_manual(values = SampleContent2_colors) +
     scale_fill_manual(values = SampleContent2_colors) +
   facet_grid(SampleSite~SampleContent2_2) +
-  theme_minimal() + 
-  theme(strip.background = element_rect(fill = "gray90", linetype = 0),
-        strip.text = element_text(size = 14, face = "bold"), 
-        axis.text = element_text(size = 12),
+  theme_bw() + 
+  theme(strip.background = element_rect(fill = "gray90", linetype = 1, color = "gray70"),
+        strip.text = element_text(size = 14), 
+        axis.text = element_text(size = 12, color="grey10"),
         legend.position = "none", 
         axis.title = element_markdown(#fill = "green4", 
-                                        size = 14), 
+                                        size = 14, color="grey10", 
+                                        margin = margin(t = unit(10, "mm"), l = unit(10, "mm"))
+                                        ), 
         strip.text.y = element_blank(), 
+        panel.border = element_rect(color = "gray70", fill = "transparent"),
         #axis.title.x = element_blank(), 
-        legend.title = element_blank()
+        legend.title = element_blank(),
+        axis.ticks = element_line(color = "gray70")
         )
 
 
@@ -3323,22 +5281,22 @@ plot_AAW <- cat_data %>%
 ```
 
 
-## Combined plot for article 
+## Figure 7: Combined plot for article 
 
 ```{r}
 
 plot <- box + plot_AAW + 
   plot_layout(nrow = 2) & plot_annotation(tag_levels = "A") & theme(plot.tag = element_text(size = 25))
-plot_name = "F8_Rain_effect_boxplot_combined"
-ggsave(plot = plot, paste0(OutputPath, "plots/1_results/", plot_name, ".png"), width = 8, height = 9)
-ggsave(plot = plot, paste0(OutputPath, "plots/1_results/", plot_name, ".pdf"), limitsize = F, useDingbats=FALSE, width = 8, height = 9)
+plot_name = "F7_Rain_effect_boxplot_combined"
+ggsave(plot = plot, paste0(OutputPath, "plots/1_results/", plot_name, ".png"), width = 8, height = 7.5)
+ggsave(plot = plot, paste0(OutputPath, "plots/1_results/", plot_name, ".pdf"), limitsize = F, useDingbats=FALSE, width = 8, height = 7.5)
 knitr::include_graphics(paste0(OutputPath, "plots/1_results/", plot_name, ".png"))
 
   
 ```
 
 
-## Figure S13: Cumulative abundance of sewer and gut core for rainy non rainy samples
+## Figure S14: Cumulative abundance of sewer and gut core for rainy non rainy samples
 
 During rainfall SWW resemples the sediment and biofilm envionments 
 
@@ -3378,9 +5336,9 @@ data_long_rain_BP <- data_long %>%
 
   
 
-  colors <- c("#A7C7E7","#D6604D", "#F4A582", "#FDDBC7", "grey90","grey60")
-  
-  
+  #colors <- c("#A7C7E7","#D6604D", "#F4A582", "#FDDBC7", "grey90","grey60")
+colors <- c("#1E3F66", "#41729F", "#76A5C9", "#B0D0E8",  "grey90","grey60")  
+
   # DF ready for growth 
   
   gut_ASV <- data_long_rain_BP %>% sample_n(1) %>% unnest(samples) %>%
@@ -3490,9 +5448,12 @@ data_long_rain_BP <- data_long %>%
     geom_bar(position="stack",stat="identity",
     )+
     scale_fill_manual(values = colors) + 
-    scale_color_manual(values = colors) + 
+    scale_color_manual(values = c("black","grey95")) + 
     scale_alpha_manual(values = c(1,1,1)) + 
     geom_label(aes(x = SampleContent5, y = newy-(values*0.5), 
+                   color = if_else(str_detect(origin_groups, "Gut") | 
+                                     str_detect(origin_groups, "trict"),
+                                   "white", "black"),
                    label = label
     ), 
     #position = position_dodge(width = 0.3),
@@ -3506,7 +5467,7 @@ data_long_rain_BP <- data_long %>%
     show.legend = FALSE
     ) + 
     geom_hline(yintercept=seq(25, 100, by=25), linewidth = unit(0.5, "lines"), linetype = "dotted") +
-    ylab("Percent [%]") + 
+    ylab("Cummulative relative abundance [%]") + 
     guides(label = "none", 
            color = "none", 
            # pattern = guide_legend(title = "Source of bacteria",
@@ -3517,11 +5478,10 @@ data_long_rain_BP <- data_long %>%
              title = "Source")) + 
     # scale_fill_manual(values = level_colors) +
     # scale_color_manual(values = level_colors) +
-    theme(legend.text = element_markdown(size = 14), 
+    theme(#legend.text = element_markdown(size = 14), 
           panel.background = element_rect(fill = "white"),
           axis.ticks.y = element_line(linewidth = unit(0.5, "lines"), color  = "black"),
-          axis.title.y = element_blank(), #element_text(size = 16), 
-          axis.title.x = element_blank(), 
+          #axis.title.y = element_blank(), #element_text(size = 16), 
           text = element_text(color  = "black"),
           legend.key = element_rect(linetype = 1), 
           strip.text.x = element_text(angle = 0, size = 16, vjust = 0.5, hjust = 0, 
@@ -3532,7 +5492,13 @@ data_long_rain_BP <- data_long %>%
         axis.text.x = element_blank(), #element_markdown(angle = 90, size = 12),
         panel.spacing=unit(1,"mm"),
         axis.ticks.x = element_blank(), 
-        legend.title = element_blank(), 
+        legend.text = element_text(size = 14, color = "black", 
+                                   margin = margin(l = unit(5,"mm"))),
+        legend.title = element_text(vjust = 0.5, size = 16, 
+                                    color="grey10", 
+                                    margin = margin(r = unit(15,"mm"))),        
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 16, color  = "black"),  
         strip.background.x = element_rect(fill = "grey90"),
         strip.background.y = element_blank()
         ) +
@@ -3540,7 +5506,7 @@ data_long_rain_BP <- data_long %>%
     scale_x_discrete(expand = c(0,0))+ 
   ggh4x::facet_nested(v~SampleContent5, scales = "free_x", space = "free")
 
-plot_name = "S13_Abundance_core_groups_wet_and_dry"
+plot_name = "S14_Abundance_core_groups_wet_and_dry"
 ggsave(plot = barplot_relative_abundance, paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".png"), width = 8, height = 8)
 ggsave(plot = barplot_relative_abundance, paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".pdf"),
        limitsize = F, useDingbats=FALSE,
@@ -3551,7 +5517,7 @@ knitr::include_graphics(paste0(OutputPath, "plots/2_supplementary_figures/", plo
 
 ```
 
-## Figure S14: TSR 
+## Figure S15: TSR 
 
 ```{r}
 
@@ -3561,26 +5527,39 @@ TSR <- DMI_rain_df %>%
   filter(SampleDate > "2020-02-01" & SampleDate < "2020-06-01") %>% 
   mutate(Rain_event = Rainfall >= 2, 
          Rain_event = factor(Rain_event, levels = c(T, F)), 
-         SampleDate = as.Date(SampleDate)) %>% 
+         SampleDate = as.Date(SampleDate), 
+         TSR_col = "TSR") %>% 
   ggplot(aes(x = SampleDate)) +
-  geom_point(aes(y = TSR)) +
+  geom_point(aes(y = TSR, color = TSR_col), show.legend = F) +
   geom_segment( aes(x=SampleDate, xend=SampleDate, y=0, yend=TSR)) +
   geom_col(aes(y = Rainfall*2, fill = (Rain_event)), alpha = 0.6) + 
   ylab("Time since rain event (TSR) [Days]") + 
   guides(fill = guide_legend(title = "Daily Rain \u2265 2 mm")) +
   scale_y_continuous(
     sec.axis = sec_axis( transform=~.*1.5, name="Daily rain i Aalborg municipalty [mm]"),
-    expand = c(0,0))+ 
+   expand = expansion(mult = c(0, 0), add = c(0, 1)))+ 
   scale_fill_manual(values = c(SampleContent2_colors[2], SampleContent2_colors[3])) + 
+  scale_color_manual(values = "black") +
   scale_x_date(date_labels = "%b %Y") +
-  theme_minimal() + 
-  theme(axis.title.x = element_blank(), 
-        legend.position = "bottom")
-plot_name = "S14_TSR"
-ggsave(plot = TSR, paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".png"), width = 8, height = 4)
+  theme_bw() +
+  theme(
+    legend.text = element_text(size = 14, color = "black", margin = margin(l = unit(5,"mm"))),
+    legend.title = element_text(vjust = 0.8, size = 16, 
+                                    color="grey10", 
+                                    margin = margin(r = unit(15,"mm"))),
+    axis.text.y = element_text(size = 14, color="grey10"),
+    axis.text.x = element_text(size = 14, color="grey10"),
+    axis.title.y =element_text(size = 14,color="grey10"),
+    axis.title.x = element_blank(),
+    axis.ticks.x = element_line(color = "grey10"),
+    legend.position = "bottom"
+    ) + 
+  guides(color = guide_legend(title = "", override.aes = list(size = 3)))
+plot_name = "S15_TSR"
+ggsave(plot = TSR, paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".png"), width = 9, height = 5)
 ggsave(plot = TSR, paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".pdf"),
        limitsize = F, useDingbats=FALSE,
-       width = 8, height = 4)
+       width = 8, height = 3)
 
 
 ggsave(plot = plot, paste0(OutputPath, "plots/2_supplementary_figures/", plot_name, ".pdf"),  width = 12, height = 11)
@@ -3594,6 +5573,9 @@ knitr::include_graphics(paste0(OutputPath, "plots/2_supplementary_figures/", plo
 
 ```{r}
 
+gradient1 <- c("#4D4D4D", "#A6A6A6", "#005082", "#2A7AA0", "#72B2D9", "#BBD5E5")
+
+gradient2 <- c("#A6A6A6", "#006400", "#2C804A", "#7AA36E")
 
 
 ```
