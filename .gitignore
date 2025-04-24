@@ -1,16 +1,31 @@
+2023_sewer_microbial_communities.Rproj
+
 /data/DMI/
 /data/metadata
 /data/other
+/data/
 
 output/files
 output/R_environment
 output/tables
 output/plots/old
 output/plots/3_presentations
-output/plots/plots_to_Rodrigo
+output/plots/plots_to_Rodrigo/
+output/plots/plots_to_Miriam/
+output/plots/growth_plots
+output/plots/1_results/F5_manual_edit.svg
 
+
+scripts/markdowns/microbial_data_to_Rodrigo_v2.html
+scripts/markdowns/microbial_data_to_Rodrigo_v2.Rmd
 scripts/markdowns/microbial_data_to_Rodrigo.html
 scripts/markdowns/microbial_data_to_Rodrigo.Rmd
+scripts/markdowns/microbial_data_to_AD_abundant_genus.Rmd
 scripts/not_used
+scripts/functions/load_sewer_data_function_Rodrigo_v2.Rmd
+
 
 .Rhistory
+.Rproj.user
+.Rprofile
+
